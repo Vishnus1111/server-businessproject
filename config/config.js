@@ -3,8 +3,8 @@ module.exports = {
   JWT_EXPIRE: process.env.JWT_EXPIRE || '24h',
   OTP_EXPIRE_MINUTES: process.env.OTP_EXPIRE_MINUTES || 5,
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
-  EMAIL_USER: process.env.EMAIL_USER,
-  EMAIL_PASS: process.env.EMAIL_PASS,
+  EMAIL_USER: process.env.EMAIL_USER || 'meghakalaiselvi@gmail.com',
+  EMAIL_PASS: process.env.EMAIL_PASS || 'sqofsaixwzoognfm',
   EMAIL_TEMPLATES: {
     PASSWORD_RESET: {
       SUBJECT: 'Password Reset Request',

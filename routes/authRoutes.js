@@ -23,13 +23,6 @@ function generateOTP() {
 // ✅ Improved Raw SMTP Email Sender (Enhanced Debugging)
 async function sendEmailSMTP(fromEmail, fromPassword, toEmail, subject, body) {
   return new Promise((resolve, reject) => {
-    // ✅ Validate email credentials before attempting connection
-    if (!fromEmail || !fromPassword) {
-      console.error("❌ Email credentials missing:", { fromEmail: !!fromEmail, fromPassword: !!fromPassword });
-      reject(new Error("Email credentials are missing"));
-      return;
-    }
-    
     console.log(`📧 Connecting to Gmail SMTP for ${toEmail}...`);
     const socket = tls.connect(465, "smtp.gmail.com", () => {
       console.log("✅ SMTP connected securely");
@@ -106,6 +99,14 @@ router.post("/login", async (req, res) => {
   try {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ error: "Invalid credentials" });
+
+    console.log("🔍 User found:", { email: user.email, hasPassword: !!user.password, passwordType: typeof user.password });
+    
+    // ✅ Check if password exists
+    if (!user.password) {
+      console.log("❌ User password is undefined/null");
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
