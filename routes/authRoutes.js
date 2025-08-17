@@ -3,7 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const tls = require("tls");
-const User = require("../models/User");
+const User = require("../models/User.js");
 const config = require("../config/config");
 
 const router = express.Router();
@@ -23,6 +23,13 @@ function generateOTP() {
 // ✅ Improved Raw SMTP Email Sender (Enhanced Debugging)
 async function sendEmailSMTP(fromEmail, fromPassword, toEmail, subject, body) {
   return new Promise((resolve, reject) => {
+    // ✅ Validate email credentials before attempting connection
+    if (!fromEmail || !fromPassword) {
+      console.error("❌ Email credentials missing:", { fromEmail: !!fromEmail, fromPassword: !!fromPassword });
+      reject(new Error("Email credentials are missing"));
+      return;
+    }
+    
     console.log(`📧 Connecting to Gmail SMTP for ${toEmail}...`);
     const socket = tls.connect(465, "smtp.gmail.com", () => {
       console.log("✅ SMTP connected securely");
@@ -106,7 +113,7 @@ router.post("/login", async (req, res) => {
     const token = jwt.sign({ id: user._id }, config.JWT_SECRET, { expiresIn: config.JWT_EXPIRE });
     res.json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, phone: user.phone || "", location: user.location || "" },
+      user: { id: user._id, name: user.name, email: user.email },
     });
   } catch (err) {
     console.error("❌ Login Error:", err);
@@ -139,6 +146,11 @@ router.post("/forgot-password", async (req, res) => {
 
     // ✅ Send email with better error handling
     try {
+      console.log("🔍 Email config check:", { 
+        EMAIL_USER: !!config.EMAIL_USER, 
+        EMAIL_PASS: !!config.EMAIL_PASS,
+        EMAIL_USER_VALUE: config.EMAIL_USER 
+      });
       await sendEmailSMTP(config.EMAIL_USER, config.EMAIL_PASS, email, subject, emailBody);
       console.log(`📧 OTP email sent successfully to ${email}`);
     } catch (emailError) {
