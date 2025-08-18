@@ -1,0 +1,11 @@
+productName,category,price,quantity,unit,expiryDate,thresholdValue
+iPhone 14,Electronics,999.99,50,piece,15/06/26,5
+Samsung Galaxy S23,Electronics,899.99,30,piece,20/12/25,3
+MacBook Pro,Electronics,1999.99,15,piece,31/12/27,2
+iPad Air,Electronics,699.99,25,piece,10/08/26,5
+AirPods Pro,Electronics,249.99,100,piece,05/03/25,10
+Dell XPS 13,Electronics,1299.99,20,piece,28/11/26,3
+HP Printer,Electronics,199.99,40,piece,15/07/25,8
+Canon Camera,Electronics,799.99,12,piece,22/09/27,2
+Sony Headphones,Electronics,299.99,60,piece,18/04/26,12
+Gaming Mouse,Electronics,89.99,80,piece,10/01/26,15

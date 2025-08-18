@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
+const path = require("path");
 const authRoutes = require("./routes/authRoutes");
 const productRoutes = require("./routes/productRoutes");
 
@@ -9,8 +10,13 @@ dotenv.config();
 
 const app = express();
 
-app.use(express.json());
+// Middleware for handling different types of requests
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);

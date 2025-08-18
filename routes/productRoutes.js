@@ -1,5 +1,4 @@
 const express = require("express");
-const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -7,49 +6,11 @@ const Product = require("../models/Product");
 
 const router = express.Router();
 
-// Configure multer for file uploads (images only)
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const uploadDir = path.join(__dirname, "../uploads");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + "-" + file.originalname);
-  }
-});
-
-const upload = multer({ 
-  storage: storage,
-  fileFilter: (req, file, cb) => {
-    // Only allow image files
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only image files are allowed'), false);
-    }
-  },
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  }
-});
-
-// Separate upload configuration for CSV files
-const csvUpload = multer({ 
-  storage: storage,
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only CSV files are allowed'), false);
-    }
-  },
-  limits: {
-    fileSize: 2 * 1024 * 1024 // 2MB limit for CSV
-  }
-});
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Generate unique product ID
 function generateProductId() {
@@ -90,6 +51,117 @@ function parseDate(dateString) {
   return date;
 }
 
+// Parse multipart form data manually (built-in Node.js only)
+function parseMultipartData(req) {
+  return new Promise((resolve, reject) => {
+    const contentType = req.headers['content-type'];
+    if (!contentType || !contentType.includes('multipart/form-data')) {
+      return reject(new Error('Content type is not multipart/form-data'));
+    }
+    
+    // Extract boundary
+    const boundaryMatch = contentType.match(/boundary=(.+)$/);
+    if (!boundaryMatch) {
+      return reject(new Error('No boundary found in content-type'));
+    }
+    const boundary = boundaryMatch[1].trim();
+    
+    let body = Buffer.alloc(0);
+    
+    req.on('data', chunk => {
+      body = Buffer.concat([body, chunk]);
+    });
+    
+    req.on('end', () => {
+      try {
+        const fields = {};
+        let fileData = null;
+        let fileName = null;
+        let fileType = null;
+        
+        console.log('Parsing multipart data with boundary:', boundary);
+        console.log('Body length:', body.length);
+        
+        // Convert to string for easier parsing
+        const bodyStr = body.toString('binary');
+        const boundaryStr = `--${boundary}`;
+        
+        // Split by boundary
+        const parts = bodyStr.split(boundaryStr);
+        console.log('Found parts:', parts.length);
+        
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          
+          if (part.includes('Content-Disposition: form-data')) {
+            console.log(`Processing part ${i}:`, part.substring(0, 200));
+            
+            // Find the headers section
+            const headerEndIndex = part.indexOf('\r\n\r\n');
+            if (headerEndIndex === -1) continue;
+            
+            const headers = part.substring(0, headerEndIndex);
+            const nameMatch = headers.match(/name="([^"]+)"/);
+            const filenameMatch = headers.match(/filename="([^"]+)"/);
+            
+            if (nameMatch) {
+              const fieldName = nameMatch[1];
+              console.log('Field name:', fieldName);
+              
+              if (filenameMatch) {
+                // This is a file field
+                fileName = filenameMatch[1];
+                const contentTypeMatch = headers.match(/Content-Type:\s*([^\r\n]+)/i);
+                fileType = contentTypeMatch ? contentTypeMatch[1].trim() : 'application/octet-stream';
+                
+                console.log('File found:', { fileName, fileType });
+                
+                // Extract file data (after headers)
+                const dataStart = headerEndIndex + 4;
+                let dataEnd = part.length;
+                
+                // Remove trailing CRLF if present
+                if (part.endsWith('\r\n')) {
+                  dataEnd -= 2;
+                }
+                
+                if (dataStart < dataEnd) {
+                  fileData = Buffer.from(part.substring(dataStart, dataEnd), 'binary');
+                  console.log('File data length:', fileData.length);
+                }
+              } else {
+                // This is a text field
+                const dataStart = headerEndIndex + 4;
+                let dataEnd = part.length;
+                
+                // Remove trailing CRLF if present
+                if (part.endsWith('\r\n')) {
+                  dataEnd -= 2;
+                }
+                
+                if (dataStart < dataEnd) {
+                  fields[fieldName] = part.substring(dataStart, dataEnd);
+                  console.log('Text field:', fieldName, '=', fields[fieldName]);
+                }
+              }
+            }
+          }
+        }
+        
+        console.log('Parsed fields:', Object.keys(fields));
+        console.log('File info:', { fileName, fileType, hasData: !!fileData });
+        
+        resolve({ fields, fileData, fileName, fileType });
+      } catch (error) {
+        console.error('Error parsing multipart data:', error);
+        reject(error);
+      }
+    });
+    
+    req.on('error', reject);
+  });
+}
+
 // Custom CSV parser using built-in Node.js modules only
 function parseCSV(filePath) {
   try {
@@ -101,17 +173,36 @@ function parseCSV(filePath) {
     }
     
     const headers = parseCSVLine(lines[0]);
+    console.log('CSV Headers:', headers);
+    
+    // Validate required headers
+    const requiredHeaders = ['productName', 'category', 'price', 'unit', 'expiryDate', 'thresholdValue'];
+    const missingHeaders = requiredHeaders.filter(header => 
+      !headers.some(h => h.trim().toLowerCase() === header.toLowerCase())
+    );
+    
+    if (missingHeaders.length > 0) {
+      throw new Error(`Missing required columns: ${missingHeaders.join(', ')}`);
+    }
+    
     const products = [];
     
     for (let i = 1; i < lines.length; i++) {
-      const values = parseCSVLine(lines[i]);
+      const line = lines[i].trim();
+      if (line === '') continue; // Skip empty lines
+      
+      const values = parseCSVLine(line);
       
       if (values.length !== headers.length) {
-        console.warn(`Line ${i + 1} has ${values.length} values but expected ${headers.length}. Skipping.`);
+        console.warn(`Row ${i + 1}: Expected ${headers.length} columns but found ${values.length}. Skipping.`);
         continue;
       }
       
-      const product = {};
+      const product = { 
+        rowNumber: i + 1, // Track 1-based row number for error reporting
+        originalLine: line // Keep original line for debugging
+      };
+      
       headers.forEach((header, index) => {
         product[header.trim()] = values[index].trim();
       });
@@ -119,6 +210,7 @@ function parseCSV(filePath) {
       products.push(product);
     }
     
+    console.log(`Successfully parsed ${products.length} rows from CSV`);
     return products;
   } catch (error) {
     throw new Error(`Error parsing CSV: ${error.message}`);
@@ -225,272 +317,417 @@ router.post("/add-single-json", async (req, res) => {
   }
 });
 
-// Test endpoint - basic form-data without file upload
-router.post("/add-single-test", (req, res) => {
+// Generate a new product ID (for frontend preview)
+router.get("/generate-id", (req, res) => {
   try {
-    console.log("Test endpoint - Request body:", req.body);
-    console.log("Test endpoint - Request headers:", req.headers);
-    
+    const productId = generateProductId();
     res.status(200).json({
       success: true,
-      message: "Test endpoint working",
-      receivedData: req.body,
-      headers: req.headers['content-type']
+      productId
     });
   } catch (error) {
-    console.error("Test endpoint error:", error);
+    console.error("Error generating product ID:", error);
     res.status(500).json({
       success: false,
+      message: "Internal server error",
       error: error.message
     });
   }
 });
 
-// Test file upload endpoint
-router.post("/test-file-upload", (req, res) => {
-  upload.single('productImage')(req, res, (err) => {
-    if (err) {
-      console.error("File upload test error:", err);
-      return res.status(400).json({
-        success: false,
-        message: "File upload failed",
-        error: err.message
-      });
-    }
-    
-    console.log("File upload test - Body:", req.body);
-    console.log("File upload test - File:", req.file);
-    
-    // Clean up test file
-    if (req.file) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error("Error cleaning up test file:", cleanupError);
-      }
-    }
-    
-    res.status(200).json({
-      success: true,
-      message: "File upload test successful",
-      body: req.body,
-      file: req.file ? {
-        filename: req.file.filename,
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size
-      } : null
-    });
-  });
-});
-
-// Add a single product (with optional image upload only - no URLs)
-router.post("/add-single", (req, res) => {
-  // Use multer upload as middleware
-  upload.single('productImage')(req, res, async (err) => {
-    if (err) {
-      console.error("Multer error:", err);
-      return res.status(400).json({
-        success: false,
-        message: "File upload error",
-        error: err.message
-      });
-    }
-
-    try {
-      console.log("Add single product request:", req.body);
-      console.log("Uploaded image:", req.file);
-      
-      const { productName, category, price, quantity, unit, expiryDate, thresholdValue } = req.body;
-      
-      // Validate required fields
-      if (!productName || !category || !price || !unit || !expiryDate || !thresholdValue) {
-        // Clean up uploaded file if validation fails
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Error cleaning up file:", cleanupError);
-          }
-        }
-        
-        return res.status(400).json({
-          success: false,
-          message: "Missing required fields: productName, category, price, unit, expiryDate (DD/MM/YY), and thresholdValue are required"
-        });
-      }
-      
-      // Parse and validate date format
-      let parsedDate;
-      try {
-        parsedDate = parseDate(expiryDate);
-      } catch (dateError) {
-        // Clean up uploaded file if date validation fails
-        if (req.file) {
-          try {
-            fs.unlinkSync(req.file.path);
-          } catch (cleanupError) {
-            console.error("Error cleaning up file:", cleanupError);
-          }
-        }
-        
-        return res.status(400).json({
-          success: false,
-          message: `Date error: ${dateError.message}`
-        });
-      }
-      
-      // Generate unique product ID
-      const productId = generateProductId();
-      
-      // Handle image upload (file only)
-      let imageUrl = null;
-      if (req.file) {
-        imageUrl = `/uploads/${req.file.filename}`;
-        console.log("Image saved as:", imageUrl);
-      }
-      
-      const product = new Product({
-        productName,
-        productId,
-        category,
-        price: parseFloat(price),
-        quantity: parseInt(quantity) || 1,
-        unit,
-        expiryDate: parsedDate,
-        thresholdValue: parseInt(thresholdValue),
-        imageUrl
-      });
-      
-      await product.save();
-      
-      res.status(201).json({
-        success: true,
-        message: "Product added successfully",
-        product
-      });
-      
-    } catch (error) {
-      console.error("Error adding single product:", error);
-      
-      // Clean up uploaded image if product creation fails
-      if (req.file) {
-        try {
-          fs.unlinkSync(req.file.path);
-        } catch (cleanupError) {
-          console.error("Error cleaning up image:", cleanupError);
-        }
-      }
-      
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-        error: error.message
-      });
-    }
-  });
-});
-
-// Add multiple products via CSV upload (no images)
-router.post("/add-multiple", csvUpload.single('csvFile'), async (req, res) => {
+// Add a single product (with optional image upload using built-in Node.js only)
+router.post("/add-single", async (req, res) => {
   try {
-    console.log("Add multiple products request");
+    console.log("Processing multipart form data...");
     
-    if (!req.file) {
+    // Parse multipart form data manually
+    const { fields, fileData, fileName, fileType } = await parseMultipartData(req);
+    
+    console.log("Parsed fields:", fields);
+    console.log("File info:", { fileName, fileType });
+    
+    const { productName, category, price, quantity, unit, expiryDate, thresholdValue } = fields;
+    
+    // Validate required fields
+    if (!productName || !category || !price || !unit || !expiryDate || !thresholdValue) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: productName, category, price, unit, expiryDate (DD/MM/YY), and thresholdValue are required"
+      });
+    }
+    
+    // Parse and validate date format
+    let parsedDate;
+    try {
+      parsedDate = parseDate(expiryDate);
+    } catch (dateError) {
+      return res.status(400).json({
+        success: false,
+        message: `Date error: ${dateError.message}`
+      });
+    }
+    
+    // Generate unique product ID
+    const productId = generateProductId();
+    
+    // Handle image upload (if provided)
+    let imageUrl = null;
+    if (fileData && fileName && fileType && fileType.startsWith('image/')) {
+      try {
+        const fileExtension = path.extname(fileName);
+        const uniqueFileName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${fileExtension}`;
+        const filePath = path.join(uploadsDir, uniqueFileName);
+        
+        // Write file using built-in fs module
+        fs.writeFileSync(filePath, fileData, 'binary');
+        imageUrl = `/uploads/${uniqueFileName}`;
+        
+        console.log("Image saved successfully:", imageUrl);
+      } catch (fileError) {
+        console.error("Error saving file:", fileError);
+        return res.status(500).json({
+          success: false,
+          message: "Error saving uploaded image",
+          error: fileError.message
+        });
+      }
+    }
+    
+    const product = new Product({
+      productName,
+      productId,
+      category,
+      price: parseFloat(price),
+      quantity: parseInt(quantity) || 1,
+      unit,
+      expiryDate: parsedDate,
+      thresholdValue: parseInt(thresholdValue),
+      imageUrl
+    });
+    
+    await product.save();
+    
+    res.status(201).json({
+      success: true,
+      message: "Product added successfully",
+      product
+    });
+    
+  } catch (error) {
+    console.error("Error adding single product:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
+    });
+  }
+});
+
+// Add multiple products via CSV upload (no images, built-in modules only)
+router.post("/add-multiple", async (req, res) => {
+  try {
+    console.log("Processing CSV upload...");
+    
+    // Parse multipart form data manually
+    const { fields, fileData, fileName, fileType } = await parseMultipartData(req);
+    
+    if (!fileData || !fileName) {
       return res.status(400).json({
         success: false,
         message: "No CSV file uploaded"
       });
     }
     
-    console.log("Uploaded file:", req.file.filename);
-    
-    // Parse CSV file
-    const products = parseCSV(req.file.path);
-    console.log(`Parsed ${products.length} products from CSV`);
-    
-    const results = {
-      successful: [],
-      failed: [],
-      duplicates: []
-    };
-    
-    for (const productData of products) {
-      try {
-        // Validate required fields (productId should NOT be in CSV)
-        if (!productData.productName || !productData.category || !productData.price || 
-            !productData.unit || !productData.expiryDate || !productData.thresholdValue) {
-          results.failed.push({
-            productData,
-            error: "Missing required fields: productName, category, price, unit, expiryDate (DD/MM/YY), thresholdValue"
-          });
-          continue;
-        }
-        
-        // Parse and validate date format
-        let parsedDate;
-        try {
-          parsedDate = parseDate(productData.expiryDate);
-        } catch (dateError) {
-          results.failed.push({
-            productData,
-            error: `Date error: ${dateError.message}`
-          });
-          continue;
-        }
-        
-        // Generate unique product ID for each product
-        const productId = generateProductId();
-        
-        const product = new Product({
-          productName: productData.productName,
-          productId: productId, // Auto-generated
-          category: productData.category,
-          price: parseFloat(productData.price),
-          quantity: parseInt(productData.quantity) || 1, // Default to 1
-          unit: productData.unit,
-          expiryDate: parsedDate,
-          thresholdValue: parseInt(productData.thresholdValue),
-          imageUrl: null // No images for bulk upload
-        });
-        
-        await product.save();
-        results.successful.push(product);
-        
-      } catch (error) {
-        results.failed.push({
-          productData,
-          error: error.message
-        });
-      }
+    // Check if it's a CSV file
+    if (!fileName.toLowerCase().endsWith('.csv') && fileType !== 'text/csv') {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload a CSV file"
+      });
     }
     
-    // Clean up uploaded file
-    fs.unlinkSync(req.file.path);
+    console.log("Uploaded CSV file:", fileName);
     
-    res.status(200).json({
-      success: true,
-      message: `Processed ${products.length} products`,
-      results: {
-        total: products.length,
-        successful: results.successful.length,
-        failed: results.failed.length,
-        duplicates: results.duplicates.length
-      },
-      details: results
-    });
+    // Save CSV file temporarily
+    const tempFileName = `temp-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.csv`;
+    const tempFilePath = path.join(uploadsDir, tempFileName);
+    
+    try {
+      fs.writeFileSync(tempFilePath, fileData, 'binary');
+      
+      // Parse CSV file
+      const products = parseCSV(tempFilePath);
+      console.log(`Parsed ${products.length} products from CSV`);
+      
+      const results = {
+        successful: [],
+        failed: [],
+        duplicates: []
+      };
+      
+      for (const productData of products) {
+        const rowNumber = productData.rowNumber;
+        
+        try {
+          // Detailed field validation with specific error messages
+          const missingFields = [];
+          const invalidFields = [];
+          
+          // Check required fields
+          if (!productData.productName || productData.productName.trim() === '') {
+            missingFields.push('productName');
+          }
+          if (!productData.category || productData.category.trim() === '') {
+            missingFields.push('category');
+          }
+          if (!productData.price || productData.price.trim() === '') {
+            missingFields.push('price');
+          }
+          if (!productData.unit || productData.unit.trim() === '') {
+            missingFields.push('unit');
+          }
+          if (!productData.expiryDate || productData.expiryDate.trim() === '') {
+            missingFields.push('expiryDate');
+          }
+          if (!productData.thresholdValue || productData.thresholdValue.trim() === '') {
+            missingFields.push('thresholdValue');
+          }
+          
+          // Validate price format
+          if (productData.price && isNaN(parseFloat(productData.price))) {
+            invalidFields.push('price (must be a valid number)');
+          }
+          
+          // Validate quantity format (if provided)
+          if (productData.quantity && productData.quantity.trim() !== '' && isNaN(parseInt(productData.quantity))) {
+            invalidFields.push('quantity (must be a valid number)');
+          }
+          
+          // Validate threshold format
+          if (productData.thresholdValue && isNaN(parseInt(productData.thresholdValue))) {
+            invalidFields.push('thresholdValue (must be a valid number)');
+          }
+          
+          // Report missing fields
+          if (missingFields.length > 0) {
+            results.failed.push({
+              rowNumber,
+              productName: productData.productName || 'Unknown',
+              error: `Row ${rowNumber}: Missing required fields: ${missingFields.join(', ')}`,
+              errorType: 'MISSING_FIELDS',
+              details: {
+                missingFields,
+                originalData: productData
+              }
+            });
+            continue;
+          }
+          
+          // Report invalid fields
+          if (invalidFields.length > 0) {
+            results.failed.push({
+              rowNumber,
+              productName: productData.productName || 'Unknown',
+              error: `Row ${rowNumber}: Invalid field format: ${invalidFields.join(', ')}`,
+              errorType: 'INVALID_FORMAT',
+              details: {
+                invalidFields,
+                originalData: productData
+              }
+            });
+            continue;
+          }
+          
+          // Parse and validate date format with specific error message
+          let parsedDate;
+          try {
+            parsedDate = parseDate(productData.expiryDate);
+          } catch (dateError) {
+            results.failed.push({
+              rowNumber,
+              productName: productData.productName || 'Unknown',
+              error: `Row ${rowNumber}: Date format error - ${dateError.message}. Expected format: DD/MM/YY (e.g., 31/12/25)`,
+              errorType: 'DATE_FORMAT_ERROR',
+              details: {
+                providedDate: productData.expiryDate,
+                expectedFormat: 'DD/MM/YY',
+                originalData: productData
+              }
+            });
+            continue;
+          }
+          
+          // Check for duplicate product names in this batch
+          const duplicateInBatch = results.successful.find(p => 
+            p.productName.toLowerCase() === productData.productName.toLowerCase()
+          );
+          
+          if (duplicateInBatch) {
+            results.duplicates.push({
+              rowNumber,
+              productName: productData.productName,
+              error: `Row ${rowNumber}: Duplicate product name '${productData.productName}' found in this upload`,
+              errorType: 'DUPLICATE_IN_BATCH',
+              details: {
+                originalData: productData
+              }
+            });
+            continue;
+          }
+          
+          // Check for existing product in database
+          const existingProduct = await Product.findOne({ 
+            productName: { $regex: new RegExp(`^${productData.productName}$`, 'i') }
+          });
+          
+          if (existingProduct) {
+            results.duplicates.push({
+              rowNumber,
+              productName: productData.productName,
+              error: `Row ${rowNumber}: Product '${productData.productName}' already exists in database`,
+              errorType: 'DUPLICATE_IN_DATABASE',
+              details: {
+                existingProductId: existingProduct.productId,
+                originalData: productData
+              }
+            });
+            continue;
+          }
+          
+          // Generate unique product ID for each product
+          const productId = generateProductId();
+          
+          const product = new Product({
+            productName: productData.productName.trim(),
+            productId: productId, // Auto-generated
+            category: productData.category.trim(),
+            price: parseFloat(productData.price),
+            quantity: parseInt(productData.quantity) || 1, // Default to 1
+            unit: productData.unit.trim(),
+            expiryDate: parsedDate,
+            thresholdValue: parseInt(productData.thresholdValue),
+            imageUrl: null // No images for bulk upload
+          });
+          
+          await product.save();
+          results.successful.push({
+            rowNumber,
+            productId: product.productId,
+            productName: product.productName,
+            category: product.category,
+            price: product.price,
+            message: `Row ${rowNumber}: Successfully added '${product.productName}'`
+          });
+          
+        } catch (error) {
+          console.error(`Error processing row ${rowNumber}:`, error);
+          results.failed.push({
+            rowNumber,
+            productName: productData.productName || 'Unknown',
+            error: `Row ${rowNumber}: Database error - ${error.message}`,
+            errorType: 'DATABASE_ERROR',
+            details: {
+              originalData: productData,
+              errorMessage: error.message
+            }
+          });
+        }
+      }
+      
+      // Clean up temporary file
+      fs.unlinkSync(tempFilePath);
+      
+      // Generate summary messages for toast notifications
+      const summaryMessages = [];
+      const errorSummary = {};
+      
+      if (results.successful.length > 0) {
+        summaryMessages.push(`✅ ${results.successful.length} products added successfully`);
+      }
+      
+      if (results.failed.length > 0) {
+        // Group errors by type for better summary
+        results.failed.forEach(failure => {
+          const type = failure.errorType || 'UNKNOWN_ERROR';
+          if (!errorSummary[type]) {
+            errorSummary[type] = [];
+          }
+          errorSummary[type].push(failure.rowNumber);
+        });
+        
+        // Create user-friendly error messages
+        Object.keys(errorSummary).forEach(errorType => {
+          const rows = errorSummary[errorType];
+          const rowText = rows.length === 1 ? `row ${rows[0]}` : `rows ${rows.join(', ')}`;
+          
+          switch (errorType) {
+            case 'MISSING_FIELDS':
+              summaryMessages.push(`❌ Missing required fields in ${rowText}`);
+              break;
+            case 'DATE_FORMAT_ERROR':
+              summaryMessages.push(`📅 Invalid date format in ${rowText} (use DD/MM/YY)`);
+              break;
+            case 'INVALID_FORMAT':
+              summaryMessages.push(`⚠️ Invalid field format in ${rowText}`);
+              break;
+            case 'DUPLICATE_IN_BATCH':
+              summaryMessages.push(`🔄 Duplicate products in ${rowText}`);
+              break;
+            case 'DUPLICATE_IN_DATABASE':
+              summaryMessages.push(`📝 Products already exist in database: ${rowText}`);
+              break;
+            default:
+              summaryMessages.push(`❌ Processing errors in ${rowText}`);
+          }
+        });
+      }
+      
+      if (results.duplicates.length > 0) {
+        const duplicateRows = results.duplicates.map(d => d.rowNumber);
+        const rowText = duplicateRows.length === 1 ? `row ${duplicateRows[0]}` : `rows ${duplicateRows.join(', ')}`;
+        summaryMessages.push(`⚠️ Duplicate products found in ${rowText}`);
+      }
+      
+      // Overall status
+      const overallSuccess = results.failed.length === 0;
+      const statusMessage = overallSuccess 
+        ? `🎉 All ${results.successful.length} products uploaded successfully!`
+        : `⚠️ ${results.successful.length}/${products.length} products uploaded successfully`;
+      
+      res.status(200).json({
+        success: overallSuccess,
+        message: statusMessage,
+        summary: summaryMessages,
+        results: {
+          total: products.length,
+          successful: results.successful.length,
+          failed: results.failed.length,
+          duplicates: results.duplicates.length
+        },
+        details: results,
+        // Quick reference for toast notifications
+        toastMessages: {
+          success: results.successful.length > 0 ? `${results.successful.length} products added successfully` : null,
+          errors: results.failed.length > 0 ? `${results.failed.length} rows had errors` : null,
+          duplicates: results.duplicates.length > 0 ? `${results.duplicates.length} duplicates found` : null
+        }
+      });
+      
+    } catch (fileError) {
+      // Clean up temporary file if it exists
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath);
+        }
+      } catch (cleanupError) {
+        console.error("Error cleaning up temp file:", cleanupError);
+      }
+      
+      throw fileError;
+    }
     
   } catch (error) {
     console.error("Error adding multiple products:", error);
-    
-    // Clean up uploaded file if it exists
-    if (req.file) {
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (cleanupError) {
-        console.error("Error cleaning up file:", cleanupError);
-      }
-    }
     
     res.status(500).json({
       success: false,
