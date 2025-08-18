@@ -5,6 +5,8 @@ const cors = require("cors");
 const path = require("path");
 const authRoutes = require("./routes/authRoutes");
 const productRoutes = require("./routes/productRoutes");
+const cronRoutes = require("./routes/cronRoutes");
+const cronJobService = require("./services/cronJobService");
 
 dotenv.config();
 
@@ -20,10 +22,19 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/cron", cronRoutes);
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
+  .then(() => {
+    console.log("MongoDB connected");
+    
+    // Start the daily cron job after database connection
+    cronJobService.startDailyCronJob();
+    
+    // For testing purposes, you can also start a test cron job that runs every minute
+    // cronJobService.startTestCronJob();
+  })
   .catch((err) => console.error(err));
 
 const PORT = process.env.PORT || 5000;

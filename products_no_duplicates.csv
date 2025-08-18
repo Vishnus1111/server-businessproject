@@ -1,0 +1,6 @@
+productName,category,price,quantity,unit,expiryDate,thresholdValue
+prod 1,grocery,2500,5,piece,31/12/25,25
+prod 2,grocery,2500,5,piece,31/12/25,25
+prod 3,grocery,2500,4,piece,31/12/25,25
+prod 4,grocery,2500,5,piece,31/12/25,25
+prod 5,grocery,2500,5,piece,31/12/25,25

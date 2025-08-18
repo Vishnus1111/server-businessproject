@@ -43,12 +43,21 @@ const productSchema = new mongoose.Schema({
   },
   availability: {
     type: String,
-    enum: ['In stock', 'Out of stock', 'Low stock'],
+    enum: ['In stock', 'Out of stock', 'Low stock', 'Expired'],
     default: function() {
       if (this.quantity === 0) return 'Out of stock';
       if (this.quantity <= this.thresholdValue) return 'Low stock';
       return 'In stock';
     }
+  },
+  status: {
+    type: String,
+    enum: ['active', 'expired'],
+    default: 'active'
+  },
+  lastStatusCheck: {
+    type: Date,
+    default: Date.now
   },
   imageUrl: {
     type: String,
@@ -58,15 +67,29 @@ const productSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Update availability before saving
+// Update availability and status before saving
 productSchema.pre('save', function(next) {
-  if (this.quantity === 0) {
-    this.availability = 'Out of stock';
-  } else if (this.quantity <= this.thresholdValue) {
-    this.availability = 'Low stock';
+  const currentDate = new Date();
+  const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+  const expiryDateOnly = new Date(this.expiryDate.getFullYear(), this.expiryDate.getMonth(), this.expiryDate.getDate());
+  
+  // Check if product has expired
+  if (expiryDateOnly < today) {
+    this.status = 'expired';
+    this.availability = 'Expired';
   } else {
-    this.availability = 'In stock';
+    this.status = 'active';
+    // Update availability based on quantity
+    if (this.quantity === 0) {
+      this.availability = 'Out of stock';
+    } else if (this.quantity <= this.thresholdValue) {
+      this.availability = 'Low stock';
+    } else {
+      this.availability = 'In stock';
+    }
   }
+  
+  this.lastStatusCheck = new Date();
   next();
 });
 

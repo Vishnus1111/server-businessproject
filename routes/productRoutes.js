@@ -557,44 +557,7 @@ router.post("/add-multiple", async (req, res) => {
             continue;
           }
           
-          // Check for duplicate product names in this batch
-          const duplicateInBatch = results.successful.find(p => 
-            p.productName.toLowerCase() === productData.productName.toLowerCase()
-          );
-          
-          if (duplicateInBatch) {
-            results.duplicates.push({
-              rowNumber,
-              productName: productData.productName,
-              error: `Row ${rowNumber}: Duplicate product name '${productData.productName}' found in this upload`,
-              errorType: 'DUPLICATE_IN_BATCH',
-              details: {
-                originalData: productData
-              }
-            });
-            continue;
-          }
-          
-          // Check for existing product in database
-          const existingProduct = await Product.findOne({ 
-            productName: { $regex: new RegExp(`^${productData.productName}$`, 'i') }
-          });
-          
-          if (existingProduct) {
-            results.duplicates.push({
-              rowNumber,
-              productName: productData.productName,
-              error: `Row ${rowNumber}: Product '${productData.productName}' already exists in database`,
-              errorType: 'DUPLICATE_IN_DATABASE',
-              details: {
-                existingProductId: existingProduct.productId,
-                originalData: productData
-              }
-            });
-            continue;
-          }
-          
-          // Generate unique product ID for each product
+          // Generate unique product ID for each product (no duplicate checking)
           const productId = generateProductId();
           
           const product = new Product({
@@ -616,7 +579,7 @@ router.post("/add-multiple", async (req, res) => {
             productName: product.productName,
             category: product.category,
             price: product.price,
-            message: `Row ${rowNumber}: Successfully added '${product.productName}'`
+            message: `Row ${rowNumber}: Successfully added '${product.productName}' with ID ${product.productId}`
           });
           
         } catch (error) {
@@ -670,22 +633,10 @@ router.post("/add-multiple", async (req, res) => {
             case 'INVALID_FORMAT':
               summaryMessages.push(`⚠️ Invalid field format in ${rowText}`);
               break;
-            case 'DUPLICATE_IN_BATCH':
-              summaryMessages.push(`🔄 Duplicate products in ${rowText}`);
-              break;
-            case 'DUPLICATE_IN_DATABASE':
-              summaryMessages.push(`📝 Products already exist in database: ${rowText}`);
-              break;
             default:
               summaryMessages.push(`❌ Processing errors in ${rowText}`);
           }
         });
-      }
-      
-      if (results.duplicates.length > 0) {
-        const duplicateRows = results.duplicates.map(d => d.rowNumber);
-        const rowText = duplicateRows.length === 1 ? `row ${duplicateRows[0]}` : `rows ${duplicateRows.join(', ')}`;
-        summaryMessages.push(`⚠️ Duplicate products found in ${rowText}`);
       }
       
       // Overall status
@@ -702,14 +653,18 @@ router.post("/add-multiple", async (req, res) => {
           total: products.length,
           successful: results.successful.length,
           failed: results.failed.length,
-          duplicates: results.duplicates.length
+          duplicates: 0 // No duplicate checking anymore
         },
-        details: results,
+        details: {
+          successful: results.successful,
+          failed: results.failed,
+          duplicates: [] // No duplicates since we don't check for them
+        },
         // Quick reference for toast notifications
         toastMessages: {
-          success: results.successful.length > 0 ? `${results.successful.length} products added successfully` : null,
+          success: results.successful.length > 0 ? `${results.successful.length} products added successfully with unique IDs` : null,
           errors: results.failed.length > 0 ? `${results.failed.length} rows had errors` : null,
-          duplicates: results.duplicates.length > 0 ? `${results.duplicates.length} duplicates found` : null
+          duplicates: null // No duplicate checking
         }
       });
       
