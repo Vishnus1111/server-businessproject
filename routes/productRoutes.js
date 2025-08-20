@@ -172,29 +172,25 @@ function parseCSV(filePath) {
       throw new Error('CSV file is empty');
     }
     
-    const headers = parseCSVLine(lines[0]);
-    console.log('CSV Headers:', headers);
+    // Define the expected column order (matching frontend form order)
+    const columnOrder = ['productName', 'productId', 'category', 'costPrice', 'sellingPrice', 'quantity', 'unit', 'expiryDate', 'thresholdValue', 'description'];
     
-    // Validate required headers
-    const requiredHeaders = ['productName', 'category', 'price', 'unit', 'expiryDate', 'thresholdValue'];
-    const missingHeaders = requiredHeaders.filter(header => 
-      !headers.some(h => h.trim().toLowerCase() === header.toLowerCase())
-    );
-    
-    if (missingHeaders.length > 0) {
-      throw new Error(`Missing required columns: ${missingHeaders.join(', ')}`);
-    }
+    console.log('Expected CSV column order (matching frontend):', columnOrder.join(', '));
+    console.log(`Processing ${lines.length} data rows from CSV`);
     
     const products = [];
     
-    for (let i = 1; i < lines.length; i++) {
+    // Process all lines as data (no header line)
+    for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (line === '') continue; // Skip empty lines
       
       const values = parseCSVLine(line);
       
-      if (values.length !== headers.length) {
-        console.warn(`Row ${i + 1}: Expected ${headers.length} columns but found ${values.length}. Skipping.`);
+      if (values.length !== columnOrder.length) {
+        console.warn(`Row ${i + 1}: Expected ${columnOrder.length} columns but found ${values.length}. Skipping.`);
+        console.warn(`Expected: ${columnOrder.join(', ')}`);
+        console.warn(`Row data: ${values.join(', ')}`);
         continue;
       }
       
@@ -203,14 +199,15 @@ function parseCSV(filePath) {
         originalLine: line // Keep original line for debugging
       };
       
-      headers.forEach((header, index) => {
-        product[header.trim()] = values[index].trim();
+      // Map values to product fields based on column order
+      columnOrder.forEach((fieldName, index) => {
+        product[fieldName] = values[index].trim();
       });
       
       products.push(product);
     }
     
-    console.log(`Successfully parsed ${products.length} rows from CSV`);
+    console.log(`Successfully parsed ${products.length} products from CSV`);
     return products;
   } catch (error) {
     throw new Error(`Error parsing CSV: ${error.message}`);
@@ -263,13 +260,13 @@ router.post("/add-single-json", async (req, res) => {
   try {
     console.log("Add single product (JSON) request:", req.body);
     
-    const { productName, category, price, quantity, unit, expiryDate, thresholdValue } = req.body;
+    const { productName, category, costPrice, sellingPrice, quantity, unit, expiryDate, thresholdValue } = req.body;
     
     // Validate required fields
-    if (!productName || !category || !price || !unit || !expiryDate || !thresholdValue) {
+    if (!productName || !category || !costPrice || !sellingPrice || !unit || !expiryDate || !thresholdValue) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: productName, category, price, unit, expiryDate (DD/MM/YY), and thresholdValue are required"
+        message: "Missing required fields: productName, category, costPrice, sellingPrice, unit, expiryDate (DD/MM/YY), and thresholdValue are required"
       });
     }
     
@@ -291,7 +288,8 @@ router.post("/add-single-json", async (req, res) => {
       productName,
       productId,
       category,
-      price: parseFloat(price),
+      costPrice: parseFloat(costPrice),
+      sellingPrice: parseFloat(sellingPrice),
       quantity: parseInt(quantity) || 1,
       unit,
       expiryDate: parsedDate,
@@ -335,6 +333,57 @@ router.get("/generate-id", (req, res) => {
   }
 });
 
+// Get CSV format requirements and sample data
+router.get("/csv-format", (req, res) => {
+  try {
+    const columnOrder = ['productName', 'productId', 'category', 'costPrice', 'sellingPrice', 'quantity', 'unit', 'expiryDate', 'thresholdValue', 'description'];
+    
+    res.status(200).json({
+      success: true,
+      message: "CSV format requirements (matching frontend form order)",
+      format: {
+        columnOrder: columnOrder,
+        description: "CSV file should contain only data rows without headers, in the same order as frontend form",
+        requirements: {
+          "productName": "Text - Name of the product (required)",
+          "productId": "Text - Product ID (leave empty for auto-generation)",
+          "category": "Text - Product category (required)",
+          "costPrice": "Number - Cost price for internal calculations (required)",
+          "sellingPrice": "Number - Selling price displayed in inventory (required)",
+          "quantity": "Number - Current stock quantity (required)",
+          "unit": "Text - Unit of measurement (piece, kg, liter, etc.) (required)",
+          "expiryDate": "Date - Format: DD/MM/YY (e.g., 31/12/25) (required)",
+          "thresholdValue": "Number - Minimum stock threshold (required)",
+          "description": "Text - Product description (optional)"
+        },
+        example: [
+          "Laptop Pro,,Electronics,800,1200,15,piece,31/12/26,5,High-performance laptop for professionals",
+          "Gaming Mouse,,Electronics,40,75,50,piece,30/06/27,10,Wireless gaming mouse with RGB lighting",
+          "Office Chair,,Furniture,200,350,25,piece,15/03/28,3,Ergonomic office chair with lumbar support"
+        ],
+        notes: [
+          "No header row required in CSV file",
+          "Each row represents one product",
+          "Columns must be in the exact order specified (matching frontend form)",
+          "Use commas to separate fields",
+          "Leave productId empty for auto-generation",
+          "Cost price is for internal calculations only",
+          "Selling price will be displayed in inventory",
+          "Date format must be DD/MM/YY",
+          "Empty lines will be skipped"
+        ]
+      }
+    });
+  } catch (error) {
+    console.error("Error getting CSV format:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message
+    });
+  }
+});
+
 // Add a single product (with optional image upload using built-in Node.js only)
 router.post("/add-single", async (req, res) => {
   try {
@@ -346,13 +395,13 @@ router.post("/add-single", async (req, res) => {
     console.log("Parsed fields:", fields);
     console.log("File info:", { fileName, fileType });
     
-    const { productName, category, price, quantity, unit, expiryDate, thresholdValue } = fields;
+    const { productName, category, costPrice, sellingPrice, quantity, unit, expiryDate, thresholdValue } = fields;
     
     // Validate required fields
-    if (!productName || !category || !price || !unit || !expiryDate || !thresholdValue) {
+    if (!productName || !category || !costPrice || !sellingPrice || !unit || !expiryDate || !thresholdValue) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: productName, category, price, unit, expiryDate (DD/MM/YY), and thresholdValue are required"
+        message: "Missing required fields: productName, category, costPrice, sellingPrice, unit, expiryDate (DD/MM/YY), and thresholdValue are required"
       });
     }
     
@@ -397,7 +446,8 @@ router.post("/add-single", async (req, res) => {
       productName,
       productId,
       category,
-      price: parseFloat(price),
+      costPrice: parseFloat(costPrice),
+      sellingPrice: parseFloat(sellingPrice),
       quantity: parseInt(quantity) || 1,
       unit,
       expiryDate: parsedDate,
@@ -480,8 +530,11 @@ router.post("/add-multiple", async (req, res) => {
           if (!productData.category || productData.category.trim() === '') {
             missingFields.push('category');
           }
-          if (!productData.price || productData.price.trim() === '') {
-            missingFields.push('price');
+          if (!productData.costPrice || productData.costPrice.trim() === '') {
+            missingFields.push('costPrice');
+          }
+          if (!productData.sellingPrice || productData.sellingPrice.trim() === '') {
+            missingFields.push('sellingPrice');
           }
           if (!productData.unit || productData.unit.trim() === '') {
             missingFields.push('unit');
@@ -493,9 +546,12 @@ router.post("/add-multiple", async (req, res) => {
             missingFields.push('thresholdValue');
           }
           
-          // Validate price format
-          if (productData.price && isNaN(parseFloat(productData.price))) {
-            invalidFields.push('price (must be a valid number)');
+          // Validate price formats
+          if (productData.costPrice && isNaN(parseFloat(productData.costPrice))) {
+            invalidFields.push('costPrice (must be a valid number)');
+          }
+          if (productData.sellingPrice && isNaN(parseFloat(productData.sellingPrice))) {
+            invalidFields.push('sellingPrice (must be a valid number)');
           }
           
           // Validate quantity format (if provided)
@@ -558,13 +614,16 @@ router.post("/add-multiple", async (req, res) => {
           }
           
           // Generate unique product ID for each product (no duplicate checking)
-          const productId = generateProductId();
+          const productId = productData.productId && productData.productId.trim() !== '' 
+            ? productData.productId.trim() 
+            : generateProductId(); // Auto-generate if not provided
           
           const product = new Product({
             productName: productData.productName.trim(),
-            productId: productId, // Auto-generated
+            productId: productId,
             category: productData.category.trim(),
-            price: parseFloat(productData.price),
+            costPrice: parseFloat(productData.costPrice),
+            sellingPrice: parseFloat(productData.sellingPrice),
             quantity: parseInt(productData.quantity) || 1, // Default to 1
             unit: productData.unit.trim(),
             expiryDate: parsedDate,

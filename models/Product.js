@@ -17,9 +17,20 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  price: {
+  costPrice: {
     type: Number,
     required: true,
+    min: 0
+  },
+  sellingPrice: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  // Keep 'price' field for backward compatibility, will use sellingPrice
+  price: {
+    type: Number,
+    required: false,
     min: 0
   },
   quantity: {
@@ -72,6 +83,11 @@ productSchema.pre('save', function(next) {
   const currentDate = new Date();
   const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
   const expiryDateOnly = new Date(this.expiryDate.getFullYear(), this.expiryDate.getMonth(), this.expiryDate.getDate());
+  
+  // Set price field to sellingPrice for backward compatibility
+  if (this.sellingPrice) {
+    this.price = this.sellingPrice;
+  }
   
   // Check if product has expired
   if (expiryDateOnly < today) {

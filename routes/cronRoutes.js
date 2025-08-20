@@ -68,11 +68,35 @@ router.get("/products/:status", async (req, res) => {
 
     const products = await Product.find(query).sort({ lastStatusCheck: -1 });
     
+    // Transform products to show proper price fields and hide sensitive data
+    const transformedProducts = products.map(product => {
+      return {
+        _id: product._id,
+        productName: product.productName,
+        productId: product.productId,
+        category: product.category,
+        // Show only selling price (for display) - hide cost price
+        price: product.sellingPrice || product.price, // Use sellingPrice if available, fallback to old price
+        sellingPrice: product.sellingPrice || product.price,
+        quantity: product.quantity,
+        unit: product.unit,
+        expiryDate: product.expiryDate,
+        thresholdValue: product.thresholdValue,
+        availability: product.availability,
+        status: product.status,
+        lastStatusCheck: product.lastStatusCheck,
+        imageUrl: product.imageUrl,
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt
+        // costPrice is intentionally excluded for security/business reasons
+      };
+    });
+    
     res.status(200).json({
       success: true,
-      count: products.length,
+      count: transformedProducts.length,
       status: status,
-      products
+      products: transformedProducts
     });
   } catch (error) {
     console.error("Error fetching products by status:", error);
