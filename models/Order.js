@@ -65,9 +65,15 @@ const orderSchema = new mongoose.Schema({
   },
   rating: {
     type: Number,
+    required: true,
     min: 1,
     max: 5,
-    default: null
+    validate: {
+      validator: function(v) {
+        return Number.isInteger(v) && v >= 1 && v <= 5;
+      },
+      message: 'Rating must be an integer between 1 and 5'
+    }
   },
   review: {
     type: String,

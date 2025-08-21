@@ -134,14 +134,17 @@ router.post('/place-order', async (req, res) => {
   try {
     const { 
       productId, 
-      quantityOrdered
+      quantityOrdered,
+      rating,
+      review,
+      customerInfo
     } = req.body;
 
     // Validation
-    if (!productId || !quantityOrdered) {
+    if (!productId || !quantityOrdered || rating === undefined || rating === null) {
       return res.status(400).json({
         success: false,
-        message: 'Product ID and quantity are required'
+        message: 'Product ID, quantity, and rating are required'
       });
     }
 
@@ -149,6 +152,14 @@ router.post('/place-order', async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Quantity must be at least 1'
+      });
+    }
+
+    // Validate rating (mandatory field)
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating is required and must be an integer between 1 and 5'
       });
     }
 
@@ -198,19 +209,36 @@ router.post('/place-order', async (req, res) => {
     const totalAmount = pricePerUnit * quantityOrdered;
 
     // Create the order
-    const order = new Order({
+    const orderData = {
       productId: product.productId,
       productName: product.productName,
       quantityOrdered: quantityOrdered,
       pricePerUnit: pricePerUnit,
-      totalAmount: totalAmount
-    });
+      totalAmount: totalAmount,
+      rating: rating // Mandatory field
+    };
+
+    // Add optional fields if provided
+    if (review) {
+      orderData.review = review;
+    }
+    
+    if (customerInfo) {
+      orderData.customerInfo = customerInfo;
+    }
+
+    const order = new Order(orderData);
 
     // Save the order
     await order.save();
 
     // Update product quantity
     product.quantity -= quantityOrdered;
+    
+    // Update product ratings with the new rating
+    product.totalRatings += 1;
+    product.ratingSum += rating;
+    product.averageRating = product.ratingSum / product.totalRatings;
     
     // Update product availability based on new quantity
     if (product.quantity === 0) {
@@ -262,7 +290,10 @@ router.post('/place-order', async (req, res) => {
         quantityOrdered: order.quantityOrdered,
         totalAmount: order.totalAmount,
         orderStatus: order.orderStatus,
-        orderDate: order.orderDate
+        orderDate: order.orderDate,
+        rating: order.rating,
+        review: order.review || '',
+        customerInfo: order.customerInfo
       },
       updatedProduct: {
         productId: product.productId,
