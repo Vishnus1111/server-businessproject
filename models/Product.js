@@ -78,6 +78,20 @@ const productSchema = new mongoose.Schema({
   imageUrl: {
     type: String,
     default: null
+  },
+  averageRating: {
+    type: Number,
+    min: 0,
+    max: 5,
+    default: 0
+  },
+  totalRatings: {
+    type: Number,
+    default: 0
+  },
+  ratingSum: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true

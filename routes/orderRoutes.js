@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+const Invoice = require('../models/Invoice');
 
 // Get product details for ordering (including image and description)
 router.get('/product/:productId', async (req, res) => {
@@ -221,6 +222,36 @@ router.post('/place-order', async (req, res) => {
     }
 
     await product.save();
+
+    // Create invoice automatically (Force restart test v2)
+    try {
+      const invoiceData = {
+        orderId: order.orderId,
+        productId: product.productId,
+        productName: product.productName,
+        customerInfo: {
+          name: 'Guest Customer',
+          email: '',
+          phone: ''
+        },
+        quantityOrdered: quantityOrdered,
+        pricePerUnit: pricePerUnit,
+        totalAmount: totalAmount,
+        orderDate: order.createdAt,
+        status: 'Unpaid'
+      };
+
+      console.log('🔄 Creating invoice with data:', JSON.stringify(invoiceData, null, 2));
+
+      const invoice = new Invoice(invoiceData);
+      await invoice.save();
+
+      console.log(`✅ Invoice created automatically: ${invoice.invoiceId} for order ${order.orderId}`);
+    } catch (invoiceError) {
+      console.error('❌ Error creating invoice:', invoiceError);
+      console.error('Invoice error details:', invoiceError.message);
+      // Don't fail the order if invoice creation fails, just log it
+    }
 
     res.status(201).json({
       success: true,

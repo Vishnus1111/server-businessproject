@@ -751,6 +751,82 @@ router.post("/add-multiple", async (req, res) => {
   }
 });
 
+// Search products across all fields
+router.get("/search", async (req, res) => {
+  try {
+    const { query, page = 1, limit = 20 } = req.query;
+    
+    if (!query || query.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: "Search query is required"
+      });
+    }
+
+    const searchRegex = new RegExp(query.trim(), 'i'); // Case-insensitive search
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Search across multiple fields
+    const searchConditions = {
+      $or: [
+        { productId: searchRegex },
+        { productName: searchRegex },
+        { category: searchRegex },
+        { description: searchRegex },
+        { brand: searchRegex },
+        { unit: searchRegex },
+        { status: searchRegex },
+        { availability: searchRegex },
+        { supplier: searchRegex },
+        { location: searchRegex },
+        { tags: { $in: [searchRegex] } },
+        // Convert numbers to string for searching
+        { $expr: { $regexMatch: { input: { $toString: "$price" }, regex: query.trim(), options: "i" } } },
+        { $expr: { $regexMatch: { input: { $toString: "$sellingPrice" }, regex: query.trim(), options: "i" } } },
+        { $expr: { $regexMatch: { input: { $toString: "$quantity" }, regex: query.trim(), options: "i" } } },
+        { $expr: { $regexMatch: { input: { $toString: "$thresholdValue" }, regex: query.trim(), options: "i" } } }
+      ]
+    };
+
+    // Get total count for pagination
+    const totalProducts = await Product.countDocuments(searchConditions);
+    
+    // Get products with pagination
+    const products = await Product.find(searchConditions)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNumber);
+
+    const totalPages = Math.ceil(totalProducts / limitNumber);
+
+    res.status(200).json({
+      success: true,
+      query: query.trim(),
+      results: {
+        products,
+        pagination: {
+          currentPage: pageNumber,
+          totalPages,
+          totalProducts,
+          productsPerPage: limitNumber,
+          hasNext: pageNumber < totalPages,
+          hasPrevious: pageNumber > 1
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Error searching products:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to search products",
+      error: error.message
+    });
+  }
+});
+
 // Get all products
 router.get("/all", async (req, res) => {
   try {
