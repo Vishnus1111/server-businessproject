@@ -2,7 +2,362 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+const SalesPurchase = require('../models/SalesPurchase');
+const SimpleSalesPurchase = require('../models/SimpleSalesPurchase');
 const moment = require('moment');
+
+// Debug endpoint to test SimpleSalesPurchase directly
+router.get('/debug-tracking', async (req, res) => {
+  try {
+    console.log('🐛 Debug: Testing SimpleSalesPurchase directly...');
+    
+    // Test 1: Count existing records
+    const count = await SimpleSalesPurchase.countDocuments();
+    console.log(`📊 Current SimpleSalesPurchase count: ${count}`);
+    
+    // Test 2: Try to create a test record directly
+    const testRecord = new SimpleSalesPurchase({
+      date: new Date(),
+      year: 2025,
+      month: 8,
+      day: 21,
+      type: 'purchase',
+      amount: 1000,
+      productId: 'TEST-123',
+      productName: 'Test Debug Product',
+      quantity: 1,
+      unitPrice: 1000
+    });
+    
+    const savedRecord = await testRecord.save();
+    console.log(`✅ Test record created:`, savedRecord._id);
+    
+    // Test 3: Try static method
+    const staticResult = await SimpleSalesPurchase.addPurchase({
+      _id: 'TEST-456',
+      name: 'Static Method Test',
+      costPrice: 2000,
+      quantity: 1
+    });
+    console.log(`✅ Static method result:`, staticResult._id);
+    
+    // Test 4: Get all records
+    const allRecords = await SimpleSalesPurchase.find();
+    console.log(`📄 All records:`, allRecords.length);
+    
+    res.json({
+      success: true,
+      debug: {
+        initialCount: count,
+        testRecordId: savedRecord._id,
+        staticMethodId: staticResult._id,
+        totalRecordsAfter: allRecords.length,
+        allRecords: allRecords.map(r => ({
+          _id: r._id,
+          type: r.type,
+          amount: r.amount,
+          productName: r.productName,
+          date: r.date
+        }))
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Debug error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// Fixed Analytics Endpoint (Using SimpleSalesPurchase)
+router.get('/chart-data-fixed', async (req, res) => {
+  try {
+    console.log('🔍 Getting fixed analytics data...');
+    
+    const { period = 'weekly' } = req.query;
+    
+    // Debug: Check if any SimpleSalesPurchase records exist
+    const totalRecords = await SimpleSalesPurchase.countDocuments();
+    console.log(`📊 Total SimpleSalesPurchase records in DB: ${totalRecords}`);
+    
+    if (totalRecords > 0) {
+      const sampleRecord = await SimpleSalesPurchase.findOne().sort({ date: -1 });
+      console.log(`📄 Latest SimpleSalesPurchase record:`, sampleRecord);
+    }
+    
+    if (period === 'weekly') {
+      const weeklyData = await SimpleSalesPurchase.getWeeklyData();
+      
+      console.log(`📊 Weekly Summary:`, weeklyData.summary);
+      console.log(`📅 Week Range: ${weeklyData.weekRange.start.toDateString()} to ${weeklyData.weekRange.end.toDateString()}`);
+      console.log(`📈 Daily Breakdown:`, weeklyData.dailyBreakdown);
+      
+      res.json({
+        success: true,
+        period: 'weekly',
+        data: {
+          summary: weeklyData.summary,
+          dailyBreakdown: weeklyData.dailyBreakdown,
+          weekRange: weeklyData.weekRange
+        },
+        debug: {
+          totalRecords,
+          hasData: totalRecords > 0
+        },
+        message: 'Fixed analytics data retrieved successfully'
+      });
+    } else {
+      // For monthly/yearly, we can implement similar logic
+      res.json({
+        success: true,
+        period,
+        data: {
+          summary: { totalPurchases: 0, totalSales: 0, profit: 0 },
+          message: `${period} analytics not implemented yet`
+        }
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Fixed analytics error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      message: 'Failed to get fixed analytics data'
+    });
+  }
+});
+
+// Simple Real-time Sales & Purchase Chart Data (Fixed)
+router.get('/chart-data-simple', async (req, res) => {
+  try {
+    console.log('🔍 Starting simple analytics...');
+    
+    const { period = 'weekly' } = req.query;
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    
+    // Get simple current week (no complex calculations)
+    const startOfWeek = new Date(currentDate);
+    const day = startOfWeek.getDay();
+    const diff = startOfWeek.getDate() - day; // Sunday is 0
+    startOfWeek.setDate(diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    endOfWeek.setHours(23, 59, 59, 999);
+    
+    console.log(`📅 Week range: ${startOfWeek.toDateString()} to ${endOfWeek.toDateString()}`);
+    
+    // Count SalesPurchase documents
+    const count = await SalesPurchase.countDocuments();
+    console.log(`📊 Total SalesPurchase documents: ${count}`);
+    
+    // Get some sample data if available
+    const sampleData = await SalesPurchase.findOne().lean();
+    console.log(`📄 Sample data exists: ${!!sampleData}`);
+    
+    res.json({
+      success: true,
+      period,
+      weekRange: {
+        start: startOfWeek,
+        end: endOfWeek
+      },
+      data: {
+        totalDocuments: count,
+        hasSampleData: !!sampleData,
+        sampleDocument: sampleData ? {
+          year: sampleData.year,
+          month: sampleData.month,
+          week: sampleData.week,
+          totalPurchases: sampleData.totalPurchases,
+          totalSales: sampleData.totalSales
+        } : null
+      },
+      message: 'Simple analytics test successful'
+    });
+    
+  } catch (error) {
+    console.error('❌ Simple analytics error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      stack: error.stack 
+    });
+  }
+});
+
+// Real-time Sales & Purchase Chart Data (Your Implementation)
+// Real-time Chart Data (FIXED - Using SimpleSalesPurchase)
+router.get('/chart-data-realtime', async (req, res) => {
+  try {
+    const { period = 'weekly' } = req.query;
+    
+    console.log(`🔍 Real-time Analytics Request - Period: ${period}`);
+    
+    // Get current date info
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+    const todayDate = new Date(todayStr); // Reset to start of day
+    
+    console.log(`� Today: ${todayStr} (${now.toLocaleString()})`);
+    
+    if (period === 'weekly') {
+      // Calculate week start (Sunday) and end (Saturday)
+      const todayDayOfWeek = todayDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      const weekStartDate = new Date(todayDate);
+      weekStartDate.setDate(todayDate.getDate() - todayDayOfWeek);
+      
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekStartDate.getDate() + 6);
+      weekEndDate.setHours(23, 59, 59, 999); // End of Saturday
+      
+      console.log(`📊 Week Range: ${weekStartDate.toISOString().split('T')[0]} to ${weekEndDate.toISOString().split('T')[0]}`);
+      
+      // Get all records for current week from SimpleSalesPurchase
+      const weekRecords = await SimpleSalesPurchase.find({
+        date: {
+          $gte: weekStartDate,
+          $lte: weekEndDate
+        }
+      }).sort({ date: 1 });
+      
+      console.log(`📄 Found ${weekRecords.length} records for current week`);
+      
+      // Create daily breakdown
+      const dailyBreakdown = [];
+      
+      for (let i = 0; i < 7; i++) {
+        const currentDay = new Date(weekStartDate);
+        currentDay.setDate(weekStartDate.getDate() + i);
+        const dayStr = currentDay.toISOString().split('T')[0];
+        
+        const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i];
+        
+        // Filter records for this day
+        const dayRecords = weekRecords.filter(record => {
+          const recordDate = new Date(record.date).toISOString().split('T')[0];
+          return recordDate === dayStr;
+        });
+        
+        // Calculate totals
+        const dayPurchases = dayRecords
+          .filter(r => r.type === 'purchase')
+          .reduce((sum, r) => sum + r.amount, 0);
+          
+        const daySales = dayRecords
+          .filter(r => r.type === 'sale')
+          .reduce((sum, r) => sum + r.amount, 0);
+        
+        dailyBreakdown.push({
+          date: dayStr,
+          day: dayName,
+          purchases: dayPurchases,
+          sales: daySales,
+          profit: daySales - dayPurchases
+        });
+      }
+      
+      // Calculate week totals
+      const totalPurchases = weekRecords
+        .filter(r => r.type === 'purchase')
+        .reduce((sum, r) => sum + r.amount, 0);
+        
+      const totalSales = weekRecords
+        .filter(r => r.type === 'sale')
+        .reduce((sum, r) => sum + r.amount, 0);
+      
+      const response = {
+        success: true,
+        data: {
+          period: 'weekly',
+          weekInfo: {
+            weekNumber: Math.ceil((todayDate.getDate() + todayDate.getDay()) / 7),
+            year: now.getFullYear(),
+            startDate: weekStartDate.toISOString().split('T')[0],
+            endDate: weekEndDate.toISOString().split('T')[0],
+            label: `Week ${Math.ceil((todayDate.getDate() + todayDate.getDay()) / 7)}, ${now.getFullYear()} (${weekStartDate.toLocaleDateString()} - ${weekEndDate.toLocaleDateString()})`
+          },
+          summary: {
+            totalPurchases,
+            totalSales,
+            profit: totalSales - totalPurchases,
+            transactionCount: weekRecords.length
+          },
+          dailyBreakdown,
+          purchases: dailyBreakdown.filter(day => day.purchases > 0),
+          sales: dailyBreakdown.filter(day => day.sales > 0)
+        }
+      };
+      
+      console.log(`✅ Real-time Weekly Summary:`, {
+        totalPurchases,
+        totalSales,
+        profit: totalSales - totalPurchases,
+        recordCount: weekRecords.length
+      });
+      
+      return res.json(response);
+    }
+    
+    // For other periods (monthly, yearly) - implement as needed
+    res.status(400).json({
+      success: false,
+      message: `Period '${period}' not implemented yet. Use 'weekly'.`
+    });
+    
+  } catch (error) {
+    console.error('❌ Error in real-time chart data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Get current week summary
+router.get('/current-week-summary', async (req, res) => {
+  try {
+    const weekInfo = SalesPurchase.getCurrentWeekInfo();
+    
+    const currentWeekData = await SalesPurchase.findOne({
+      year: weekInfo.year,
+      month: weekInfo.month,
+      week: weekInfo.week
+    });
+
+    const summary = {
+      weekNumber: weekInfo.week,
+      year: weekInfo.year,
+      weekStart: weekInfo.weekStartDate,
+      weekEnd: weekInfo.weekEndDate,
+      totalPurchases: currentWeekData?.totalPurchases || 0,
+      totalSales: currentWeekData?.totalSales || 0,
+      profit: (currentWeekData?.totalSales || 0) - (currentWeekData?.totalPurchases || 0),
+      transactionCounts: {
+        purchases: currentWeekData?.purchaseTransactions?.length || 0,
+        sales: currentWeekData?.salesTransactions?.length || 0
+      }
+    };
+
+    res.json({
+      success: true,
+      summary
+    });
+
+  } catch (error) {
+    console.error('Error fetching current week summary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch week summary',
+      error: error.message
+    });
+  }
+});
 
 // Helper function to get date ranges
 const getDateRanges = (period = 'week') => {

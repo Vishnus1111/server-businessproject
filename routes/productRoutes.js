@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const Product = require("../models/Product");
+const SimpleSalesPurchase = require("../models/SimpleSalesPurchase");
 
 const router = express.Router();
 
@@ -299,6 +300,28 @@ router.post("/add-single-json", async (req, res) => {
     
     await product.save();
     
+    // Track purchase in simplified analytics (FIXED)
+    try {
+      console.log(`🔍 Tracking Purchase (Fixed): ${product.productName}`);
+      console.log(`💰 Purchase Amount: ₹${product.costPrice} × ${product.quantity} = ₹${product.costPrice * product.quantity}`);
+      
+      const trackingResult = await SimpleSalesPurchase.addPurchase({
+        _id: product._id,
+        name: product.productName,
+        costPrice: product.costPrice,
+        quantity: product.quantity
+      });
+      
+      console.log(`✅ Purchase tracked successfully (Fixed):`, {
+        productName: product.productName,
+        amount: product.costPrice * product.quantity,
+        trackingId: trackingResult._id
+      });
+    } catch (trackingError) {
+      console.error('❌ Error tracking purchase (Fixed):', trackingError);
+      // Don't fail product creation if tracking fails
+    }
+    
     res.status(201).json({
       success: true,
       message: "Product added successfully",
@@ -456,6 +479,28 @@ router.post("/add-single", async (req, res) => {
     });
     
     await product.save();
+    
+    // Track purchase in simplified analytics (FIXED)
+    try {
+      console.log(`🔍 Tracking Purchase (Form-data): ${product.productName}`);
+      console.log(`💰 Purchase Amount: ₹${product.costPrice} × ${product.quantity} = ₹${product.costPrice * product.quantity}`);
+      
+      const trackingResult = await SimpleSalesPurchase.addPurchase({
+        _id: product._id,
+        name: product.productName,
+        costPrice: product.costPrice,
+        quantity: product.quantity
+      });
+      
+      console.log(`✅ Purchase tracked successfully (Form-data):`, {
+        productName: product.productName,
+        amount: product.costPrice * product.quantity,
+        trackingId: trackingResult._id
+      });
+    } catch (trackingError) {
+      console.error('❌ Error tracking purchase (Form-data):', trackingError);
+      // Don't fail product creation if tracking fails
+    }
     
     res.status(201).json({
       success: true,

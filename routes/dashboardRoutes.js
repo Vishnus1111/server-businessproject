@@ -2,6 +2,35 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 const Order = require('../models/Order');
+const SalesPurchase = require('../models/SalesPurchase');
+const SimpleSalesPurchase = require('../models/SimpleSalesPurchase');
+
+// Test SalesPurchase data endpoint
+router.get('/test-salespurchase', async (req, res) => {
+  try {
+    console.log('🔍 Testing SimpleSalesPurchase collection...');
+    const count = await SimpleSalesPurchase.countDocuments();
+    console.log(`📊 SimpleSalesPurchase documents count: ${count}`);
+    
+    if (count > 0) {
+      const recent = await SimpleSalesPurchase.find().sort({ createdAt: -1 }).limit(5);
+      console.log('📄 Recent 5 documents:');
+      recent.forEach((doc, index) => {
+        console.log(`${index + 1}. Type: ${doc.type}, Amount: ₹${doc.amount}, Date: ${doc.createdAt}`);
+      });
+    }
+    
+    res.json({
+      success: true,
+      count,
+      recent: count > 0 ? await SimpleSalesPurchase.find().sort({ createdAt: -1 }).limit(5) : [],
+      message: 'SimpleSalesPurchase collection test complete'
+    });
+  } catch (error) {
+    console.error('❌ Error testing SimpleSalesPurchase:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Get comprehensive dashboard statistics
 router.get('/stats', async (req, res) => {
@@ -151,7 +180,7 @@ router.get('/stats', async (req, res) => {
             $sum: {
               $multiply: [
                 '$quantityOrdered',
-                { $ifNull: ['$productData.costPrice', '$productData.price', 0] }
+                { $ifNull: ['$productData.costPrice', 0] }
               ]
             }
           }

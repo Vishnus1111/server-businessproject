@@ -98,7 +98,7 @@ router.post("/login", async (req, res) => {
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ error: "Invalid credentials" });
+    if (!user) return res.status(400).json({ error: "User not found" });
 
     console.log("🔍 User found:", { email: user.email, hasPassword: !!user.password, passwordType: typeof user.password });
     

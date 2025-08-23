@@ -3,6 +3,8 @@ const router = express.Router();
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const Invoice = require('../models/Invoice');
+const SalesPurchase = require('../models/SalesPurchase');
+const SimpleSalesPurchase = require('../models/SimpleSalesPurchase');
 
 // Get product details for ordering (including image and description)
 router.get('/product/:productId', async (req, res) => {
@@ -231,6 +233,34 @@ router.post('/place-order', async (req, res) => {
 
     // Save the order
     await order.save();
+
+    // Track sales for analytics (FIXED - Using SimpleSalesPurchase)
+    try {
+      console.log(`🔍 Tracking Sale (Fixed): ${order.productName}`);
+      console.log(`💰 Sale Amount: ₹${order.pricePerUnit} × ${order.quantityOrdered} = ₹${order.totalAmount}`);
+      
+      // Create order data compatible with SimpleSalesPurchase.addSale
+      const salesTrackingData = {
+        _id: order._id,
+        userId: order.userId,
+        items: [{
+          productId: order.productId,
+          name: order.productName,
+          quantity: order.quantityOrdered,
+          price: order.pricePerUnit  // This should be the selling price
+        }]
+      };
+      
+      const trackingResult = await SimpleSalesPurchase.addSale(salesTrackingData);
+      console.log(`✅ Sale tracked successfully (Fixed):`, {
+        productName: order.productName,
+        amount: order.totalAmount,
+        recordsCreated: trackingResult.length
+      });
+    } catch (trackingError) {
+      console.error('❌ Error tracking sale (Fixed):', trackingError);
+      // Don't fail order if tracking fails
+    }
 
     // Update product quantity
     product.quantity -= quantityOrdered;
