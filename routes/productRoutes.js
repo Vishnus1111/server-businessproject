@@ -427,11 +427,83 @@ router.post("/add-single", async (req, res) => {
         message: "Missing required fields: productName, category, costPrice, sellingPrice, unit, expiryDate (DD/MM/YY), and thresholdValue are required"
       });
     }
+
+    // Validate numeric fields and convert
+    const parsedCostPrice = parseFloat(costPrice);
+    const parsedSellingPrice = parseFloat(sellingPrice);
+    const parsedQuantity = parseInt(quantity) || 1;
+    const parsedThresholdValue = parseInt(thresholdValue);
+
+    // Validation for negative or invalid values
+    if (isNaN(parsedCostPrice) || parsedCostPrice < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Cost price must be a positive number"
+      });
+    }
+
+    if (isNaN(parsedSellingPrice) || parsedSellingPrice < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Selling price must be a positive number"
+      });
+    }
+
+    if (isNaN(parsedQuantity) || parsedQuantity < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Quantity must be a positive number"
+      });
+    }
+
+    if (isNaN(parsedThresholdValue) || parsedThresholdValue < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Threshold value must be a positive number"
+      });
+    }
+
+    // Business logic validation
+    if (parsedSellingPrice < parsedCostPrice) {
+      return res.status(400).json({
+        success: false,
+        message: "Selling price should be greater than or equal to cost price"
+      });
+    }
+
+    if (parsedThresholdValue > parsedQuantity) {
+      return res.status(400).json({
+        success: false,
+        message: "Threshold value should not exceed quantity"
+      });
+    }
+
+    // Check for duplicate product name
+    const existingProduct = await Product.findOne({ 
+      productName: { $regex: new RegExp(`^${productName.trim()}$`, 'i') } 
+    });
+    if (existingProduct) {
+      return res.status(409).json({
+        success: false,
+        message: "A product with this name already exists"
+      });
+    }
     
     // Parse and validate date format
     let parsedDate;
     try {
       parsedDate = parseDate(expiryDate);
+      
+      // Validate that expiry date is in the future
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Set to start of day for comparison
+      
+      if (parsedDate < today) {
+        return res.status(400).json({
+          success: false,
+          message: "Expiry date must be in the future"
+        });
+      }
     } catch (dateError) {
       return res.status(400).json({
         success: false,
@@ -469,12 +541,12 @@ router.post("/add-single", async (req, res) => {
       productName,
       productId,
       category,
-      costPrice: parseFloat(costPrice),
-      sellingPrice: parseFloat(sellingPrice),
-      quantity: parseInt(quantity) || 1,
+      costPrice: parsedCostPrice,
+      sellingPrice: parsedSellingPrice,
+      quantity: parsedQuantity,
       unit,
       expiryDate: parsedDate,
-      thresholdValue: parseInt(thresholdValue),
+      thresholdValue: parsedThresholdValue,
       imageUrl
     });
     
@@ -513,6 +585,203 @@ router.post("/add-single", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message
+    });
+  }
+});
+
+// Validate CSV file before upload
+router.post("/validate-csv", async (req, res) => {
+  try {
+    console.log("🚀 POST /validate-csv route hit!");
+    console.log("Request headers:", req.headers);
+    console.log("Request content-type:", req.headers['content-type']);
+    console.log("Validating CSV file...");
+    
+    // Parse multipart form data manually
+    const { fileData, fileName, fileType } = await parseMultipartData(req);
+    
+    if (!fileData || !fileName) {
+      return res.status(400).json({
+        success: false,
+        message: "No CSV file uploaded"
+      });
+    }
+    
+    // Check if it's a CSV file
+    if (!fileName.toLowerCase().endsWith('.csv') && fileType !== 'text/csv') {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid file format. Please upload a CSV file"
+      });
+    }
+    
+    // Parse CSV content
+    const csvContent = fileData.toString('utf8');
+    const lines = csvContent.split('\n').map(line => line.trim()).filter(line => line);
+    
+    if (lines.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV file is empty"
+      });
+    }
+    
+    // Expected headers
+    const expectedHeaders = ['productName', 'category', 'costPrice', 'sellingPrice', 'quantity', 'unit', 'expiryDate', 'thresholdValue'];
+    const headers = lines[0].split(',').map(h => h.trim().replace(/['"]/g, ''));
+    
+    // Check if all required headers are present
+    const missingHeaders = expectedHeaders.filter(header => !headers.includes(header));
+    if (missingHeaders.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Missing required columns: ${missingHeaders.join(', ')}`
+      });
+    }
+    
+    const errors = [];
+    let validProducts = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Validate each row
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/['"]/g, ''));
+      const rowNumber = i + 1;
+      
+      if (values.length !== headers.length) {
+        errors.push({
+          row: rowNumber,
+          message: "Incorrect number of columns"
+        });
+        continue;
+      }
+      
+      const product = {};
+      headers.forEach((header, index) => {
+        product[header] = values[index];
+      });
+      
+      // Validate required fields
+      const requiredFields = ['productName', 'category', 'costPrice', 'sellingPrice', 'quantity', 'unit', 'expiryDate', 'thresholdValue'];
+      const emptyFields = requiredFields.filter(field => !product[field] || product[field].trim() === '');
+      
+      if (emptyFields.length > 0) {
+        errors.push({
+          row: rowNumber,
+          message: `Empty required fields: ${emptyFields.join(', ')}`
+        });
+        continue;
+      }
+      
+      // Validate numeric fields
+      const costPrice = parseFloat(product.costPrice);
+      const sellingPrice = parseFloat(product.sellingPrice);
+      const quantity = parseInt(product.quantity);
+      const thresholdValue = parseInt(product.thresholdValue);
+      
+      if (isNaN(costPrice) || costPrice < 0) {
+        errors.push({
+          row: rowNumber,
+          message: "Invalid cost price (must be positive number)"
+        });
+        continue;
+      }
+      
+      if (isNaN(sellingPrice) || sellingPrice < 0) {
+        errors.push({
+          row: rowNumber,
+          message: "Invalid selling price (must be positive number)"
+        });
+        continue;
+      }
+      
+      if (isNaN(quantity) || quantity < 0) {
+        errors.push({
+          row: rowNumber,
+          message: "Invalid quantity (must be positive number)"
+        });
+        continue;
+      }
+      
+      if (isNaN(thresholdValue) || thresholdValue < 0) {
+        errors.push({
+          row: rowNumber,
+          message: "Invalid threshold value (must be positive number)"
+        });
+        continue;
+      }
+      
+      // Business logic validation
+      if (sellingPrice < costPrice) {
+        errors.push({
+          row: rowNumber,
+          message: "Selling price should be greater than or equal to cost price"
+        });
+        continue;
+      }
+      
+      if (thresholdValue > quantity) {
+        errors.push({
+          row: rowNumber,
+          message: "Threshold value should not exceed quantity"
+        });
+        continue;
+      }
+      
+      // Date validation
+      try {
+        const expiryDate = parseDate(product.expiryDate);
+        if (expiryDate < today) {
+          errors.push({
+            row: rowNumber,
+            message: "Expiry date must be in the future"
+          });
+          continue;
+        }
+      } catch (dateError) {
+        errors.push({
+          row: rowNumber,
+          message: `Invalid expiry date: ${dateError.message}`
+        });
+        continue;
+      }
+      
+      // Check for duplicate product names in database
+      try {
+        const existingProduct = await Product.findOne({ 
+          productName: { $regex: new RegExp(`^${product.productName.trim()}$`, 'i') } 
+        });
+        if (existingProduct) {
+          errors.push({
+            row: rowNumber,
+            message: `Product "${product.productName}" already exists in database`
+          });
+          continue;
+        }
+      } catch (dbError) {
+        console.error('Database error while checking duplicates:', dbError);
+      }
+      
+      validProducts++;
+    }
+    
+    console.log(`Validation complete: ${validProducts} valid products, ${errors.length} errors`);
+    
+    res.json({
+      success: true,
+      message: "CSV validation completed",
+      validProducts,
+      totalRows: lines.length - 1, // Exclude header
+      errors
+    });
+    
+  } catch (error) {
+    console.error("CSV validation error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during CSV validation",
       error: error.message
     });
   }
@@ -891,7 +1160,12 @@ router.get("/all", async (req, res) => {
   }
 });
 
-// Get single product by ID
+// Test route for debugging
+router.get("/test", (req, res) => {
+  res.json({ message: "Product routes are working!" });
+});
+
+// Get single product by ID (keep this last as it's a wildcard route)
 router.get("/:productId", async (req, res) => {
   try {
     const product = await Product.findOne({ productId: req.params.productId });

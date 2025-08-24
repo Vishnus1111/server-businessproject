@@ -97,8 +97,14 @@ router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    console.log("🔍 Looking up user with email:", email);
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ error: "User not found" });
+    console.log("👤 Database query result:", user ? "User found" : "User not found");
+    
+    if (!user) {
+      console.log("❌ No user found - returning User not found");
+      return res.status(400).json({ error: "User not found" });
+    }
 
     console.log("🔍 User found:", { email: user.email, hasPassword: !!user.password, passwordType: typeof user.password });
     
@@ -109,8 +115,13 @@ router.post("/login", async (req, res) => {
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
+    console.log("🔐 Password comparison result:", isMatch);
+    if (!isMatch) {
+      console.log("❌ Password mismatch - returning Invalid credentials");
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
 
+    console.log("✅ Login successful - generating token");
     const token = jwt.sign({ id: user._id }, config.JWT_SECRET, { expiresIn: config.JWT_EXPIRE });
     res.json({
       token,

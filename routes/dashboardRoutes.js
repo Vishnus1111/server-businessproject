@@ -222,7 +222,7 @@ router.get('/stats', async (req, res) => {
           revenue: revenueData[0]?.totalRevenue || 0
         },
         topSelling: {
-          count: topSellingProducts.length > 0 ? topSellingProducts[0].totalQuantitySold : 0,
+          count: Math.min(topSellingProducts.length, 5), // Always show max 5 top selling products
           cost: costRevenueData[0]?.totalCost || 0
         },
         lowStocks: {
@@ -305,7 +305,7 @@ router.get('/inventory-summary', async (req, res) => {
     ]);
     const totalRevenue = revenueData[0]?.totalRevenue || 0;
 
-    // Top Selling - most ordered product
+    // Top Selling - get top 5 products for consistency
     const topSellingData = await Order.aggregate([
       {
         $match: {
@@ -321,7 +321,7 @@ router.get('/inventory-summary', async (req, res) => {
         }
       },
       { $sort: { totalQuantity: -1 } },
-      { $limit: 1 }
+      { $limit: 5 }
     ]);
 
     // Cost calculation for top selling
@@ -422,7 +422,7 @@ router.get('/inventory-summary', async (req, res) => {
           revenue: totalRevenue
         },
         topSelling: {
-          count: topSellingData[0]?.totalQuantity || 0,
+          count: Math.min(topSellingData.length, 5), // Always show max 5 top selling products
           period: `Last ${days} days`,
           cost: topProductCost[0]?.totalCost || 0
         },

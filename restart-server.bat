@@ -1,0 +1,9 @@
+@echo off
+echo Stopping Node.js processes...
+taskkill /F /IM node.exe >nul 2>&1
+echo Waiting 2 seconds...
+timeout /T 2 >nul
+echo Starting backend server...
+cd /D "c:\Users\vishn\OneDrive\Desktop\businessproject\backend\server"
+start "Backend Server" cmd /k npm start
+echo Backend server started in new window
