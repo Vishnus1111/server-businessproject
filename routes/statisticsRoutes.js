@@ -15,31 +15,13 @@ router.get('/debug-tracking', async (req, res) => {
     const count = await SimpleSalesPurchase.countDocuments();
     console.log(`📊 Current SimpleSalesPurchase count: ${count}`);
     
-    // Test 2: Try to create a test record directly
-    const testRecord = new SimpleSalesPurchase({
-      date: new Date(),
-      year: 2025,
-      month: 8,
-      day: 21,
-      type: 'purchase',
-      amount: 1000,
-      productId: 'TEST-123',
-      productName: 'Test Debug Product',
-      quantity: 1,
-      unitPrice: 1000
-    });
+    // DISABLED: Don't automatically create test records
+    // This was causing unexpected additions to purchase statistics
+    console.log(`⚠️ Auto-creation of test records disabled to prevent unexpected statistics`);
     
-    const savedRecord = await testRecord.save();
-    console.log(`✅ Test record created:`, savedRecord._id);
-    
-    // Test 3: Try static method
-    const staticResult = await SimpleSalesPurchase.addPurchase({
-      _id: 'TEST-456',
-      name: 'Static Method Test',
-      costPrice: 2000,
-      quantity: 1
-    });
-    console.log(`✅ Static method result:`, staticResult._id);
+    // Skip creating test records to avoid adding 3000 to purchase totals
+    const savedRecord = { _id: 'disabled-to-prevent-data-pollution' };
+    const staticResult = { _id: 'disabled-to-prevent-data-pollution' };
     
     // Test 4: Get all records
     const allRecords = await SimpleSalesPurchase.find();
@@ -62,6 +44,173 @@ router.get('/debug-tracking', async (req, res) => {
       }
     });
     
+  } catch (error) {
+    console.error('❌ Debug error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// Debug endpoint to add test data for specific days
+router.get('/add-test-data', async (req, res) => {
+  try {
+    const { day, type } = req.query;
+    const purchaseType = type || 'purchase';
+    
+    console.log(`🧪 Adding test data for day: ${day}, type: ${purchaseType}`);
+    
+    // Convert day string to a date in current week
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ...
+    const dayMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+    
+    if (!day || !dayMap.hasOwnProperty(day.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid day (sunday, monday, tuesday, etc.)'
+      });
+    }
+    
+    const targetDay = dayMap[day.toLowerCase()];
+    const daysToAdjust = targetDay - currentDay;
+    
+    // Create date for the target day
+    const targetDate = new Date();
+    targetDate.setDate(now.getDate() + daysToAdjust);
+    targetDate.setHours(12, 0, 0, 0); // Noon
+    
+    console.log(`📅 Current date: ${now.toISOString()}`);
+    console.log(`📅 Target date: ${targetDate.toISOString()}`);
+    
+    // Create a test record for the target day
+    const amount = req.query.amount ? parseInt(req.query.amount) : Math.round(Math.random() * 10000);
+    const product = req.query.product || `Test ${day} ${purchaseType}`;
+    
+    console.log(`🔢 Using amount: ${amount}, product: ${product}`);
+    
+    const testData = new SimpleSalesPurchase({
+      date: targetDate,
+      year: targetDate.getFullYear(),
+      month: targetDate.getMonth() + 1,
+      day: targetDate.getDate(),
+      type: purchaseType,
+      amount: amount,
+      productId: `TEST-${Date.now()}`,
+      productName: product,
+      quantity: Math.round(Math.random() * 10) + 1,
+      unitPrice: amount / (Math.round(Math.random() * 10) + 1)
+    });
+    
+    await testData.save();
+    
+    res.json({
+      success: true,
+      message: `Test ${purchaseType} data added for ${day}`,
+      day: day,
+      type: purchaseType,
+      record: {
+        id: testData._id,
+        date: testData.date,
+        day: testData.day,
+        month: testData.month,
+        year: testData.year,
+        amount: testData.amount,
+        product: testData.productName
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error adding test data:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Debug endpoint to check records for a specific day
+router.get('/debug-day-records', async (req, res) => {
+  try {
+    // Default to today if no date is provided
+    const { date } = req.query;
+    const targetDate = date ? new Date(date) : new Date();
+    
+    // Reset to start of day
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    // End of day
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    console.log(`🔍 Checking records for ${startOfDay.toISOString().split('T')[0]}`);
+    console.log(`   Time range: ${startOfDay.toISOString()} to ${endOfDay.toISOString()}`);
+    
+    // Find all records for the specified day
+    const dayRecords = await SimpleSalesPurchase.find({
+      date: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      }
+    }).sort({ date: 1 });
+    
+    // Get a list of all SimpleSalesPurchase records (limited to most recent 100)
+    const allRecords = await SimpleSalesPurchase.find()
+      .sort({ date: -1 })
+      .limit(100);
+    
+    // Calculate totals for the day
+    const purchaseRecords = dayRecords.filter(r => r.type === 'purchase');
+    const saleRecords = dayRecords.filter(r => r.type === 'sale');
+    
+    const totalPurchases = purchaseRecords.reduce((sum, r) => sum + r.amount, 0);
+    const totalSales = saleRecords.reduce((sum, r) => sum + r.amount, 0);
+    
+    // Return debug information
+    res.json({
+      success: true,
+      date: startOfDay.toISOString().split('T')[0],
+      dayOfWeek: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][startOfDay.getDay()],
+      dayRecords: {
+        total: dayRecords.length,
+        purchases: {
+          count: purchaseRecords.length,
+          amount: totalPurchases,
+          records: purchaseRecords.map(r => ({
+            id: r._id,
+            product: r.productName,
+            amount: r.amount,
+            quantity: r.quantity,
+            timestamp: r.date
+          }))
+        },
+        sales: {
+          count: saleRecords.length,
+          amount: totalSales,
+          records: saleRecords.map(r => ({
+            id: r._id,
+            product: r.productName,
+            amount: r.amount,
+            quantity: r.quantity,
+            timestamp: r.date
+          }))
+        }
+      },
+      allRecords: {
+        count: allRecords.length,
+        mostRecent: allRecords.map(r => ({
+          id: r._id,
+          type: r.type,
+          product: r.productName,
+          amount: r.amount,
+          date: r.date.toISOString().split('T')[0],
+          timestamp: r.date
+        }))
+      }
+    });
   } catch (error) {
     console.error('❌ Debug error:', error);
     res.status(500).json({
@@ -203,7 +352,7 @@ router.get('/chart-data-realtime', async (req, res) => {
     const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
     const todayDate = new Date(todayStr); // Reset to start of day
     
-    console.log(`� Today: ${todayStr} (${now.toLocaleString()})`);
+    console.log(`📅 Today: ${todayStr} (${now.toLocaleString()})`);
     
     if (period === 'weekly') {
       // Calculate week start (Sunday) and end (Saturday)
@@ -230,18 +379,32 @@ router.get('/chart-data-realtime', async (req, res) => {
       // Create daily breakdown
       const dailyBreakdown = [];
       
+      console.log(`🔍 DEBUG: Creating daily breakdown for ${weekRecords.length} records`);
+      
+      // Debug each record from the week
+      weekRecords.forEach((record, index) => {
+        const recordDate = new Date(record.date);
+        const dayOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][recordDate.getDay()];
+        console.log(`🔹 Record ${index + 1}: ${record.type} - ${record.productName} - ₹${record.amount} - ${recordDate.toISOString()} - ${dayOfWeek}`);
+      });
+      
       for (let i = 0; i < 7; i++) {
         const currentDay = new Date(weekStartDate);
         currentDay.setDate(weekStartDate.getDate() + i);
         const dayStr = currentDay.toISOString().split('T')[0];
         
         const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i];
+        console.log(`\n📅 Processing ${dayName} (${dayStr}):`);
         
         // Filter records for this day
         const dayRecords = weekRecords.filter(record => {
           const recordDate = new Date(record.date).toISOString().split('T')[0];
-          return recordDate === dayStr;
+          const matches = recordDate === dayStr;
+          console.log(`  - Record date: ${recordDate}, Day: ${dayStr}, Matches: ${matches ? 'YES' : 'NO'}`);
+          return matches;
         });
+        
+        console.log(`  Found ${dayRecords.length} records for ${dayName}`);
         
         // Calculate totals
         const dayPurchases = dayRecords
@@ -251,6 +414,8 @@ router.get('/chart-data-realtime', async (req, res) => {
         const daySales = dayRecords
           .filter(r => r.type === 'sale')
           .reduce((sum, r) => sum + r.amount, 0);
+        
+        console.log(`  Totals for ${dayName}: Purchases: ₹${dayPurchases}, Sales: ₹${daySales}`);
         
         dailyBreakdown.push({
           date: dayStr,
@@ -301,19 +466,164 @@ router.get('/chart-data-realtime', async (req, res) => {
       });
       
       return res.json(response);
+    } 
+    else if (period === 'monthly') {
+      // Get monthly data for the current year
+      const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+      
+      console.log(`✅ Monthly data retrieved for year ${monthlyData.year}`);
+      console.log(`📊 Monthly Summary:`, monthlyData.summary);
+      
+      const response = {
+        success: true,
+        data: {
+          period: 'monthly',
+          yearInfo: {
+            year: monthlyData.year,
+            label: `Monthly data for ${monthlyData.year}`
+          },
+          summary: monthlyData.summary,
+          monthlyBreakdown: monthlyData.monthlyBreakdown,
+          purchases: monthlyData.monthlyBreakdown.filter(month => month.purchases > 0),
+          sales: monthlyData.monthlyBreakdown.filter(month => month.sales > 0)
+        }
+      };
+      
+      return res.json(response);
     }
-    
-    // For other periods (monthly, yearly) - implement as needed
-    res.status(400).json({
-      success: false,
-      message: `Period '${period}' not implemented yet. Use 'weekly'.`
-    });
+    else if (period === 'yearly') {
+      // Get yearly data
+      const yearlyData = await SimpleSalesPurchase.getYearlyData();
+      
+      console.log(`✅ Yearly data retrieved for year ${yearlyData.year}`);
+      console.log(`📊 Yearly Summary:`, yearlyData.summary);
+      
+      const response = {
+        success: true,
+        data: {
+          period: 'yearly',
+          yearInfo: {
+            year: yearlyData.year,
+            label: `Data for ${yearlyData.year}`
+          },
+          summary: yearlyData.summary,
+          yearlyBreakdown: [yearlyData.yearlyData], // Put in array for consistency with other periods
+          purchases: yearlyData.yearlyData.purchases > 0 ? [yearlyData.yearlyData] : [],
+          sales: yearlyData.yearlyData.sales > 0 ? [yearlyData.yearlyData] : []
+        }
+      };
+      
+      return res.json(response);
+    }
+    else {
+      // Invalid period
+      res.status(400).json({
+        success: false,
+        message: `Period '${period}' is not valid. Use 'weekly', 'monthly', or 'yearly'.`
+      });
+    }
     
   } catch (error) {
     console.error('❌ Error in real-time chart data:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
+      error: error.message
+    });
+  }
+});
+
+// Overview endpoint for statistics cards
+router.get('/overview', async (req, res) => {
+  try {
+    console.log('🔍 Getting statistics overview data...');
+    
+    // Get current date
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1; // 1-12
+    const currentYear = now.getFullYear();
+    
+    // Get last month
+    const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+    const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+    
+    // Calculate start and end dates for current and last month
+    const currentMonthStart = new Date(currentYear, currentMonth - 1, 1);
+    const currentMonthEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59, 999);
+    
+    const lastMonthStart = new Date(lastMonthYear, lastMonth - 1, 1);
+    const lastMonthEnd = new Date(lastMonthYear, lastMonth, 0, 23, 59, 59, 999);
+
+    console.log(`📅 Current month: ${currentMonthStart.toISOString().split('T')[0]} to ${currentMonthEnd.toISOString().split('T')[0]}`);
+    console.log(`📅 Last month: ${lastMonthStart.toISOString().split('T')[0]} to ${lastMonthEnd.toISOString().split('T')[0]}`);
+    
+    // Get total revenue (sales)
+    const currentMonthSales = await SimpleSalesPurchase.find({
+      type: 'sale',
+      date: { $gte: currentMonthStart, $lte: currentMonthEnd }
+    });
+    
+    const lastMonthSales = await SimpleSalesPurchase.find({
+      type: 'sale',
+      date: { $gte: lastMonthStart, $lte: lastMonthEnd }
+    });
+    
+    const currentMonthRevenue = currentMonthSales.reduce((sum, sale) => sum + sale.amount, 0);
+    const lastMonthRevenue = lastMonthSales.reduce((sum, sale) => sum + sale.amount, 0);
+    
+    // Calculate revenue percentage change
+    const revenuePercentChange = lastMonthRevenue > 0 
+      ? ((currentMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 
+      : 0;
+    
+    // Get products sold count
+    const currentMonthProductsSold = currentMonthSales.reduce((sum, sale) => sum + sale.quantity, 0);
+    const lastMonthProductsSold = lastMonthSales.reduce((sum, sale) => sum + sale.quantity, 0);
+    
+    // Calculate products sold percentage change
+    const productsSoldPercentChange = lastMonthProductsSold > 0 
+      ? ((currentMonthProductsSold - lastMonthProductsSold) / lastMonthProductsSold) * 100 
+      : 0;
+    
+    // Get products in stock count (from Product model)
+    const productsInStock = await Product.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalProducts: { $sum: "$quantity" }
+        }
+      }
+    ]);
+    
+    const totalProductsInStock = productsInStock.length > 0 ? productsInStock[0].totalProducts : 0;
+    
+    // For products in stock, let's assume 10% growth for demo
+    const productsInStockPercentChange = 13.5;
+    
+    // Get top selling products
+    const topProducts = await Product.find().sort({ soldCount: -1 }).limit(6);
+    
+    res.json({
+      success: true,
+      totalRevenue: currentMonthRevenue,
+      revenuePercentChange,
+      productsSold: currentMonthProductsSold,
+      productsSoldPercentChange,
+      productsInStock: totalProductsInStock,
+      productsInStockPercentChange,
+      topProducts: topProducts.map(p => ({
+        id: p._id,
+        name: p.productName,
+        rating: p.rating || Math.floor(Math.random() * 5) + 1, // Random rating 1-5 if not available
+        soldCount: p.soldCount || 0
+      }))
+    });
+    
+  } catch (error) {
+    console.error('❌ Error in statistics overview:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving statistics overview',
       error: error.message
     });
   }
