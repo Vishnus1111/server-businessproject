@@ -1100,7 +1100,10 @@ router.get("/search", async (req, res) => {
         { $expr: { $regexMatch: { input: { $toString: "$price" }, regex: query.trim(), options: "i" } } },
         { $expr: { $regexMatch: { input: { $toString: "$sellingPrice" }, regex: query.trim(), options: "i" } } },
         { $expr: { $regexMatch: { input: { $toString: "$quantity" }, regex: query.trim(), options: "i" } } },
-        { $expr: { $regexMatch: { input: { $toString: "$thresholdValue" }, regex: query.trim(), options: "i" } } }
+        { $expr: { $regexMatch: { input: { $toString: "$thresholdValue" }, regex: query.trim(), options: "i" } } },
+        // Search in date fields - convert date to string format
+        { $expr: { $regexMatch: { input: { $dateToString: { format: "%d/%m/%Y", date: "$expiryDate" } }, regex: query.trim(), options: "i" } } },
+        { $expr: { $regexMatch: { input: { $dateToString: { format: "%Y-%m-%d", date: "$expiryDate" } }, regex: query.trim(), options: "i" } } }
       ]
     };
 
