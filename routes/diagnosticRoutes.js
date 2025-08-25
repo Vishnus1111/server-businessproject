@@ -43,7 +43,11 @@ router.get('/diagnostic', async (req, res) => {
     const totalPurchaseAmount = rawTotalPurchaseAmount / 2;
     const totalSalesAmount = weekSales.reduce((sum, r) => sum + r.amount, 0);
     
+    // Calculate profit directly from sale records
+    const totalProfitAmount = weekSales.reduce((sum, r) => sum + (r.profit || 0), 0);
+    
     console.log(`💰 Current week totals: Raw Purchases ₹${rawTotalPurchaseAmount}, Corrected Purchases ₹${totalPurchaseAmount}, Sales ₹${totalSalesAmount}`);
+    console.log(`💵 Current week profit (calculated from sales records): ₹${totalProfitAmount}`);
     
     // 5. Detailed breakdown by day
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -106,7 +110,8 @@ router.get('/diagnostic', async (req, res) => {
             rawPurchases: rawTotalPurchaseAmount,
             purchases: totalPurchaseAmount,  // Corrected value (divided by 2)
             sales: totalSalesAmount,
-            profit: totalSalesAmount - totalPurchaseAmount,
+            profit: totalProfitAmount, // Use actual profit calculated from sales records
+            oldProfit: totalSalesAmount - totalPurchaseAmount, // Old calculation method for reference
             correctionFactor: "Purchase amounts are divided by 2 to correct for double-counting"
           },
           dailyBreakdown

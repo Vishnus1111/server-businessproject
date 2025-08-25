@@ -239,15 +239,31 @@ router.post('/place-order', async (req, res) => {
       console.log(`🔍 Tracking Sale (Fixed): ${order.productName}`);
       console.log(`💰 Sale Amount: ₹${order.pricePerUnit} × ${order.quantityOrdered} = ₹${order.totalAmount}`);
       
+      // Get the cost price from the product to calculate profit correctly
+      const product = await Product.findOne({ productId: order.productId });
+      
+      if (!product) {
+        console.warn(`⚠️ Cannot find product ${order.productId} to calculate profit. Using default profit calculation.`);
+      }
+      
+      // Calculate profit as selling price - cost price
+      const costPrice = product ? product.costPrice : 0;
+      const profit = (order.pricePerUnit - costPrice) * order.quantityOrdered;
+      
+      console.log(`💵 Profit calculation: (${order.pricePerUnit} - ${costPrice}) × ${order.quantityOrdered} = ₹${profit}`);
+      
       // Create order data compatible with SimpleSalesPurchase.addSale
       const salesTrackingData = {
         _id: order._id,
         userId: order.userId,
+        costPrice: costPrice, // Add cost price for profit calculation
         items: [{
           productId: order.productId,
           name: order.productName,
           quantity: order.quantityOrdered,
-          price: order.pricePerUnit  // This should be the selling price
+          price: order.pricePerUnit,
+          costPrice: costPrice, // Include cost price for each item
+          profit: profit // Include the calculated profit
         }]
       };
       
@@ -255,6 +271,7 @@ router.post('/place-order', async (req, res) => {
       console.log(`✅ Sale tracked successfully (Fixed):`, {
         productName: order.productName,
         amount: order.totalAmount,
+        profit: profit,
         recordsCreated: trackingResult.length
       });
     } catch (trackingError) {

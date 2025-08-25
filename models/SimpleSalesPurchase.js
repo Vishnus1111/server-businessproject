@@ -35,6 +35,12 @@ const simpleSalesPurchaseSchema = new mongoose.Schema({
     default: 0
   },
   
+  // Profit data (for sales only)
+  profit: {
+    type: Number,
+    default: 0
+  },
+  
   // Product details
   productId: String,
   productName: String,
@@ -117,6 +123,9 @@ simpleSalesPurchaseSchema.statics.addSale = async function(orderData) {
     const saleRecords = [];
     
     for (const item of orderData.items) {
+      // Calculate profit based on selling price - cost price
+      const profit = item.profit || (item.price - (item.costPrice || 0)) * item.quantity;
+      
       const saleRecord = new this({
         date: today,
         year: today.getFullYear(),
@@ -129,12 +138,13 @@ simpleSalesPurchaseSchema.statics.addSale = async function(orderData) {
         quantity: item.quantity,
         unitPrice: item.price,
         orderId: orderData._id,
-        userId: orderData.userId
+        userId: orderData.userId,
+        profit: profit // Store the actual profit
       });
       
       await saleRecord.save();
       saleRecords.push(saleRecord);
-      console.log(`✅ Sale tracked: ${item.name} - ₹${saleRecord.amount}`);
+      console.log(`✅ Sale tracked: ${item.name} - ₹${saleRecord.amount} - Profit: ₹${profit}`);
       console.log(`✅ Sale record ID: ${saleRecord._id}`);
       console.log(`✅ Stored date: ${saleRecord.date.toISOString()}`);
     }
@@ -189,6 +199,10 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
     
     const totalSales = sales.reduce((sum, t) => sum + t.amount, 0);
     
+    // NEW: Calculate profit directly from sale records instead of sales - purchases
+    const totalProfit = sales.reduce((sum, t) => sum + (t.profit || 0), 0);
+    console.log(`📊 PROFIT CALCULATION: Using actual profit from sales: ₹${totalProfit}`);
+    
     // Create daily breakdown
     const dailyData = [];
     for (let i = 0; i < 7; i++) {
@@ -208,13 +222,18 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
       
       const daySales = dayTransactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + t.amount, 0);
       
+      // Calculate day profit directly from sale records
+      const dayProfit = dayTransactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + (t.profit || 0), 0);
+      
       console.log(`📅 ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]} purchases: Raw: ₹${rawDayPurchases}, Corrected: ₹${dayPurchases}`);
+      console.log(`📅 ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]} profit: ₹${dayProfit}`);
       
       dailyData.push({
         date: currentDay.toDateString(),
         day: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i],
         purchases: dayPurchases,
         sales: daySales,
+        profit: dayProfit, // Use actual profit from sales
         transactionCount: dayTransactions.length
       });
     }
@@ -227,7 +246,7 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
       summary: {
         totalPurchases,
         totalSales,
-        profit: totalSales - totalPurchases,
+        profit: totalProfit, // Use actual profit from sales instead of sales - purchases
         totalTransactions: weekTransactions.length
       },
       dailyBreakdown: dailyData,
@@ -270,6 +289,10 @@ simpleSalesPurchaseSchema.statics.getMonthlyData = async function() {
       
       const totalSales = sales.reduce((sum, t) => sum + t.amount, 0);
       
+      // Calculate profit directly from sale records
+      const totalProfit = sales.reduce((sum, t) => sum + (t.profit || 0), 0);
+      console.log(`📊 MONTHLY PROFIT CALCULATION: Month: ${month+1}, Profit: ₹${totalProfit}`);
+      
       const monthName = startOfMonth.toLocaleString('default', { month: 'long' });
       
       monthlyData.push({
@@ -278,7 +301,7 @@ simpleSalesPurchaseSchema.statics.getMonthlyData = async function() {
         endDate: endOfMonth,
         purchases: totalPurchases,
         sales: totalSales,
-        profit: totalSales - totalPurchases,
+        profit: totalProfit, // Use actual profit from sales
         transactionCount: monthTransactions.length
       });
     }
@@ -334,12 +357,16 @@ simpleSalesPurchaseSchema.statics.getYearlyData = async function() {
     
     const totalSales = sales.reduce((sum, t) => sum + t.amount, 0);
     
+    // Calculate profit directly from sale records
+    const totalProfit = sales.reduce((sum, t) => sum + (t.profit || 0), 0);
+    console.log(`📊 YEARLY PROFIT CALCULATION: Profit: ₹${totalProfit}`);
+    
     return {
       year: currentYear,
       summary: {
         totalPurchases,
         totalSales,
-        profit: totalSales - totalPurchases,
+        profit: totalProfit, // Use actual profit from sales
         totalTransactions: yearTransactions.length
       },
       yearlyData: {
@@ -348,7 +375,7 @@ simpleSalesPurchaseSchema.statics.getYearlyData = async function() {
         endDate: endOfYear,
         purchases: totalPurchases,
         sales: totalSales,
-        profit: totalSales - totalPurchases,
+        profit: totalProfit, // Use actual profit from sales
         transactionCount: yearTransactions.length
       }
     };
