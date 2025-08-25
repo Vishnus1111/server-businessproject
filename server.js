@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const path = require("path");
 const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
 const productRoutes = require("./routes/productRoutes");
 const cronRoutes = require("./routes/cronRoutes");
 const orderRoutes = require("./routes/orderRoutes");
@@ -37,6 +38,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/cron", cronRoutes);
 app.use("/api/orders", orderRoutes);
@@ -48,6 +50,7 @@ app.use("/api/top-products", topProductsRoutes);
 // Debug: Log all registered routes
 console.log("📋 Registered routes:");
 console.log("  - /api/auth/*");
+console.log("  - /api/users/*");
 console.log("  - /api/products/*");
 console.log("  - /api/cron/*");
 console.log("  - /api/orders/*");
