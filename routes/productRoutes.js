@@ -174,23 +174,44 @@ function parseCSV(filePath) {
     }
     
     // Define the expected column order (matching frontend form order)
+    // Header line is optional - if present, we'll ignore it
+    // Required fields: productName, category, costPrice, sellingPrice, quantity, unit, expiryDate, thresholdValue
+    // Optional fields: productId (will generate if missing), description (will default to empty)
     const columnOrder = ['productName', 'productId', 'category', 'costPrice', 'sellingPrice', 'quantity', 'unit', 'expiryDate', 'thresholdValue', 'description'];
     
     console.log('Expected CSV column order (matching frontend):', columnOrder.join(', '));
-    console.log(`Processing ${lines.length} data rows from CSV`);
+    console.log(`Processing ${lines.length} lines from CSV`);
+    
+    // Check if first line is a header by looking for field names
+    const firstLine = lines[0].trim().toLowerCase();
+    let startIndex = 0;
+    
+    if (firstLine.includes('productname') || 
+        firstLine.includes('product name') || 
+        firstLine.includes('name') || 
+        firstLine.includes('category')) {
+      console.log('CSV appears to have a header row, skipping first line');
+      startIndex = 1;
+    } else {
+      console.log('No header detected, processing all lines as data');
+    }
+    
+    if (startIndex >= lines.length) {
+      throw new Error('No data rows found in CSV file');
+    }
     
     const products = [];
     
-    // Process all lines as data (no header line)
-    for (let i = 0; i < lines.length; i++) {
+    // Process lines as data (skipping header if detected)
+    for (let i = startIndex; i < lines.length; i++) {
       const line = lines[i].trim();
       if (line === '') continue; // Skip empty lines
       
       const values = parseCSVLine(line);
       
-      if (values.length !== columnOrder.length) {
-        console.warn(`Row ${i + 1}: Expected ${columnOrder.length} columns but found ${values.length}. Skipping.`);
-        console.warn(`Expected: ${columnOrder.join(', ')}`);
+      // Be flexible with column count - if fewer columns provided, just use what we have
+      if (values.length < 5) {  // Require at least the critical fields
+        console.warn(`Row ${i + 1}: Too few columns (${values.length}). Need at least product name, category, prices, and quantity.`);
         console.warn(`Row data: ${values.join(', ')}`);
         continue;
       }
@@ -200,10 +221,34 @@ function parseCSV(filePath) {
         originalLine: line // Keep original line for debugging
       };
       
-      // Map values to product fields based on column order
+      // Map values to product fields based on column order, with some flexibility
       columnOrder.forEach((fieldName, index) => {
-        product[fieldName] = values[index].trim();
+        // Only assign if the value exists, otherwise leave it undefined
+        if (index < values.length && values[index] !== undefined) {
+          product[fieldName] = values[index].trim();
+        }
       });
+      
+      // Check if we have the minimum required fields
+      if (!product.productName || product.productName.trim() === '') {
+        console.warn(`Row ${i + 1}: Missing product name, skipping.`);
+        continue;
+      }
+      
+      if (!product.category || product.category.trim() === '') {
+        console.warn(`Row ${i + 1}: Missing category for "${product.productName}", using "Uncategorized".`);
+        product.category = "Uncategorized";
+      }
+      
+      // Set default values for missing fields
+      if (!product.productId || product.productId.trim() === '') {
+        product.productId = generateProductId();
+        console.log(`Row ${i + 1}: Generated product ID: ${product.productId} for "${product.productName}"`);
+      }
+      
+      if (!product.description) {
+        product.description = '';
+      }
       
       products.push(product);
     }

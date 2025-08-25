@@ -347,6 +347,18 @@ router.get('/chart-data-realtime', async (req, res) => {
     
     console.log(`🔍 Real-time Analytics Request - Period: ${period}`);
     
+    // Check if we have any purchase records at all (for debugging)
+    const allPurchaseCount = await SimpleSalesPurchase.countDocuments({ type: 'purchase' });
+    const allSalesCount = await SimpleSalesPurchase.countDocuments({ type: 'sale' });
+    
+    console.log(`📊 Total records in database: ${allPurchaseCount} purchases, ${allSalesCount} sales`);
+    
+    if (allPurchaseCount > 0) {
+      // Get a sample purchase record to check dates
+      const samplePurchase = await SimpleSalesPurchase.findOne({ type: 'purchase' }).sort({ createdAt: -1 });
+      console.log(`📄 Sample purchase record: ${samplePurchase.productName} - ₹${samplePurchase.amount} - Date: ${samplePurchase.date.toISOString()}`);
+    }
+    
     // Get current date info
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD format
@@ -367,6 +379,9 @@ router.get('/chart-data-realtime', async (req, res) => {
       console.log(`📊 Week Range: ${weekStartDate.toISOString().split('T')[0]} to ${weekEndDate.toISOString().split('T')[0]}`);
       
       // Get all records for current week from SimpleSalesPurchase
+      // Log date range we're querying for clarity
+      console.log(`📅 Querying for records between: ${weekStartDate.toISOString()} and ${weekEndDate.toISOString()}`);
+      
       const weekRecords = await SimpleSalesPurchase.find({
         date: {
           $gte: weekStartDate,
@@ -375,6 +390,11 @@ router.get('/chart-data-realtime', async (req, res) => {
       }).sort({ date: 1 });
       
       console.log(`📄 Found ${weekRecords.length} records for current week`);
+      
+      // Get a count of purchase records for debugging
+      const purchaseCount = weekRecords.filter(r => r.type === 'purchase').length;
+      const saleCount = weekRecords.filter(r => r.type === 'sale').length;
+      console.log(`📊 Types breakdown: ${purchaseCount} purchases, ${saleCount} sales`);
       
       // Create daily breakdown
       const dailyBreakdown = [];
@@ -427,13 +447,24 @@ router.get('/chart-data-realtime', async (req, res) => {
       }
       
       // Calculate week totals
-      const totalPurchases = weekRecords
-        .filter(r => r.type === 'purchase')
-        .reduce((sum, r) => sum + r.amount, 0);
-        
-      const totalSales = weekRecords
-        .filter(r => r.type === 'sale')
-        .reduce((sum, r) => sum + r.amount, 0);
+      const purchaseRecords = weekRecords.filter(r => r.type === 'purchase');
+      const salesRecords = weekRecords.filter(r => r.type === 'sale');
+      
+      // Calculate totals with detailed logging
+      let totalPurchases = 0;
+      purchaseRecords.forEach(record => {
+        totalPurchases += record.amount;
+        console.log(`💰 Purchase: ${record.productName} - ₹${record.amount} - ${new Date(record.date).toLocaleDateString()}`);
+      });
+      
+      let totalSales = 0;
+      salesRecords.forEach(record => {
+        totalSales += record.amount;
+        console.log(`💰 Sale: ${record.productName || 'Unknown product'} - ₹${record.amount} - ${new Date(record.date).toLocaleDateString()}`);
+      });
+      
+      console.log(`📊 Week summary: ${purchaseRecords.length} purchases totaling ₹${totalPurchases}`);
+      console.log(`📊 Week summary: ${salesRecords.length} sales totaling ₹${totalSales}`);
       
       const response = {
         success: true,

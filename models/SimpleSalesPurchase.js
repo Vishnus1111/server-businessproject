@@ -70,11 +70,9 @@ simpleSalesPurchaseSchema.statics.addPurchase = async function(productData) {
     console.log(`📆 Day of week: ${dayNames[currentDayOfWeek]} (${currentDayOfWeek})`);
     console.log(`📆 Date parts: Year=${currentDate.getFullYear()}, Month=${currentDate.getMonth() + 1}, Day=${currentDate.getDate()}`);
     
-    // IMPORTANT: Force date to be today (August 25, 2025 - Monday)
-    // For real production code, we would use the actual current date
-    // This is just a temporary fix to handle the date discrepancy issue
-    const today = new Date('2025-08-25T12:00:00.000Z');
-    console.log(`📆 Using fixed date: ${today.toISOString()} (${dayNames[today.getDay()]})`);
+    // Use the actual current date instead of a fixed date
+    const today = currentDate;
+    console.log(`📆 Using current date: ${today.toISOString()} (${dayNames[today.getDay()]})`);
     
     const purchaseRecord = new this({
       date: today,
@@ -112,11 +110,9 @@ simpleSalesPurchaseSchema.statics.addSale = async function(orderData) {
     console.log(`📆 Day of week: ${dayNames[currentDayOfWeek]} (${currentDayOfWeek})`);
     console.log(`📆 Date parts: Year=${currentDate.getFullYear()}, Month=${currentDate.getMonth() + 1}, Day=${currentDate.getDate()}`);
     
-    // IMPORTANT: Force date to be today (August 25, 2025 - Monday)
-    // For real production code, we would use the actual current date
-    // This is just a temporary fix to handle the date discrepancy issue
-    const today = new Date('2025-08-25T12:00:00.000Z');
-    console.log(`📆 Using fixed date: ${today.toISOString()} (${dayNames[today.getDay()]})`);
+    // Use the actual current date instead of a fixed date
+    const today = currentDate;
+    console.log(`📆 Using current date: ${today.toISOString()} (${dayNames[today.getDay()]})`);
     
     const saleRecords = [];
     
@@ -164,10 +160,20 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
     
+    console.log(`📅 Getting transactions for week: ${startOfWeek.toISOString()} to ${endOfWeek.toISOString()}`);
+    
     // Get all transactions for this week
     const weekTransactions = await this.find({
       date: { $gte: startOfWeek, $lte: endOfWeek }
     }).sort({ date: 1 });
+    
+    console.log(`📊 Found ${weekTransactions.length} transactions for current week`);
+    
+    // Debug the transactions found
+    if (weekTransactions.length > 0) {
+      console.log(`📄 First transaction: ${weekTransactions[0].type} - ${weekTransactions[0].amount} - ${weekTransactions[0].date}`);
+      console.log(`📄 Last transaction: ${weekTransactions[weekTransactions.length-1].type} - ${weekTransactions[weekTransactions.length-1].amount} - ${weekTransactions[weekTransactions.length-1].date}`);
+    }
     
     // Calculate totals
     const purchases = weekTransactions.filter(t => t.type === 'purchase');
