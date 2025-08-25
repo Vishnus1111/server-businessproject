@@ -451,11 +451,14 @@ router.get('/chart-data-realtime', async (req, res) => {
       const salesRecords = weekRecords.filter(r => r.type === 'sale');
       
       // Calculate totals with detailed logging
-      let totalPurchases = 0;
+      let rawTotalPurchases = 0;
       purchaseRecords.forEach(record => {
-        totalPurchases += record.amount;
+        rawTotalPurchases += record.amount;
         console.log(`💰 Purchase: ${record.productName} - ₹${record.amount} - ${new Date(record.date).toLocaleDateString()}`);
       });
+      
+      // Apply correction factor to fix doubled purchase amounts
+      let totalPurchases = rawTotalPurchases / 2;
       
       let totalSales = 0;
       salesRecords.forEach(record => {
@@ -463,7 +466,7 @@ router.get('/chart-data-realtime', async (req, res) => {
         console.log(`💰 Sale: ${record.productName || 'Unknown product'} - ₹${record.amount} - ${new Date(record.date).toLocaleDateString()}`);
       });
       
-      console.log(`📊 Week summary: ${purchaseRecords.length} purchases totaling ₹${totalPurchases}`);
+      console.log(`📊 Week summary: ${purchaseRecords.length} purchases, Raw total: ₹${rawTotalPurchases}, Corrected: ₹${totalPurchases}`);
       console.log(`📊 Week summary: ${salesRecords.length} sales totaling ₹${totalSales}`);
       
       const response = {

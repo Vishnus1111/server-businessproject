@@ -13,6 +13,7 @@ const invoiceRoutes = require("./routes/invoiceRoutes");
 const statisticsRoutes = require("./routes/statisticsRoutes");
 const topProductsRoutes = require("./routes/topProductsRoutes");
 const diagnosticRoutes = require("./routes/diagnosticRoutes");
+const dataFixRoutes = require("./routes/dataFixRoutes");
 const cronJobService = require("./services/cronJobService");
 
 dotenv.config();
@@ -48,6 +49,7 @@ app.use("/api/invoices", invoiceRoutes);
 app.use("/api/statistics", statisticsRoutes);
 app.use("/api/top-products", topProductsRoutes);
 app.use("/api/diagnostic", diagnosticRoutes);
+app.use("/api/data-fix", dataFixRoutes);
 
 // Debug: Log all registered routes
 console.log("📋 Registered routes:");

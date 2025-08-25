@@ -179,7 +179,14 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
     const purchases = weekTransactions.filter(t => t.type === 'purchase');
     const sales = weekTransactions.filter(t => t.type === 'sale');
     
-    const totalPurchases = purchases.reduce((sum, t) => sum + t.amount, 0);
+    // Calculate raw purchases sum
+    const rawPurchasesTotal = purchases.reduce((sum, t) => sum + t.amount, 0);
+    
+    // Apply correction factor to fix the duplicate counting issue
+    // Dividing by 2 as per requirement since the values are doubled
+    const totalPurchases = rawPurchasesTotal / 2;
+    console.log(`📊 PURCHASE CORRECTION: Raw total: ₹${rawPurchasesTotal}, Corrected total: ₹${totalPurchases}`);
+    
     const totalSales = sales.reduce((sum, t) => sum + t.amount, 0);
     
     // Create daily breakdown
@@ -193,8 +200,15 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
         return transactionDate.toDateString() === currentDay.toDateString();
       });
       
-      const dayPurchases = dayTransactions.filter(t => t.type === 'purchase').reduce((sum, t) => sum + t.amount, 0);
+      // Calculate raw purchase total for the day
+      const rawDayPurchases = dayTransactions.filter(t => t.type === 'purchase').reduce((sum, t) => sum + t.amount, 0);
+      
+      // Apply the same correction factor to daily purchases
+      const dayPurchases = rawDayPurchases / 2;
+      
       const daySales = dayTransactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + t.amount, 0);
+      
+      console.log(`📅 ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]} purchases: Raw: ₹${rawDayPurchases}, Corrected: ₹${dayPurchases}`);
       
       dailyData.push({
         date: currentDay.toDateString(),
@@ -247,7 +261,13 @@ simpleSalesPurchaseSchema.statics.getMonthlyData = async function() {
       const purchases = monthTransactions.filter(t => t.type === 'purchase');
       const sales = monthTransactions.filter(t => t.type === 'sale');
       
-      const totalPurchases = purchases.reduce((sum, t) => sum + t.amount, 0);
+      // Calculate raw purchases sum
+      const rawPurchasesTotal = purchases.reduce((sum, t) => sum + t.amount, 0);
+      
+      // Apply correction factor to fix the duplicate counting issue
+      const totalPurchases = rawPurchasesTotal / 2;
+      console.log(`📊 MONTHLY PURCHASE CORRECTION: Month: ${month+1}, Raw: ₹${rawPurchasesTotal}, Corrected: ₹${totalPurchases}`);
+      
       const totalSales = sales.reduce((sum, t) => sum + t.amount, 0);
       
       const monthName = startOfMonth.toLocaleString('default', { month: 'long' });
@@ -263,13 +283,21 @@ simpleSalesPurchaseSchema.statics.getMonthlyData = async function() {
       });
     }
     
+    // Calculate the summary data
+    const yearTotalPurchases = monthlyData.reduce((sum, m) => sum + m.purchases, 0);
+    const yearTotalSales = monthlyData.reduce((sum, m) => sum + m.sales, 0);
+    const yearProfit = monthlyData.reduce((sum, m) => sum + m.profit, 0);
+    const yearTotalTransactions = monthlyData.reduce((sum, m) => sum + m.transactionCount, 0);
+    
+    console.log(`📊 YEARLY SUMMARY: Total Purchases: ₹${yearTotalPurchases}, Total Sales: ₹${yearTotalSales}, Profit: ₹${yearProfit}`);
+    
     return {
       year: currentYear,
       summary: {
-        totalPurchases: monthlyData.reduce((sum, m) => sum + m.purchases, 0),
-        totalSales: monthlyData.reduce((sum, m) => sum + m.sales, 0),
-        profit: monthlyData.reduce((sum, m) => sum + m.profit, 0),
-        totalTransactions: monthlyData.reduce((sum, m) => sum + m.transactionCount, 0)
+        totalPurchases: yearTotalPurchases,
+        totalSales: yearTotalSales,
+        profit: yearProfit,
+        totalTransactions: yearTotalTransactions
       },
       monthlyBreakdown: monthlyData
     };
@@ -297,7 +325,13 @@ simpleSalesPurchaseSchema.statics.getYearlyData = async function() {
     const purchases = yearTransactions.filter(t => t.type === 'purchase');
     const sales = yearTransactions.filter(t => t.type === 'sale');
     
-    const totalPurchases = purchases.reduce((sum, t) => sum + t.amount, 0);
+    // Calculate raw purchases sum
+    const rawPurchasesTotal = purchases.reduce((sum, t) => sum + t.amount, 0);
+    
+    // Apply correction factor to fix the duplicate counting issue
+    const totalPurchases = rawPurchasesTotal / 2;
+    console.log(`📊 YEARLY PURCHASE CORRECTION: Raw: ₹${rawPurchasesTotal}, Corrected: ₹${totalPurchases}`);
+    
     const totalSales = sales.reduce((sum, t) => sum + t.amount, 0);
     
     return {

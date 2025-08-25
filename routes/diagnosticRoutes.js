@@ -38,10 +38,12 @@ router.get('/diagnostic', async (req, res) => {
     console.log(`📊 Current week: ${weekRecords.length} records (${weekPurchases.length} purchases, ${weekSales.length} sales)`);
     
     // 4. Calculate totals
-    const totalPurchaseAmount = weekPurchases.reduce((sum, r) => sum + r.amount, 0);
+    const rawTotalPurchaseAmount = weekPurchases.reduce((sum, r) => sum + r.amount, 0);
+    // Apply correction factor
+    const totalPurchaseAmount = rawTotalPurchaseAmount / 2;
     const totalSalesAmount = weekSales.reduce((sum, r) => sum + r.amount, 0);
     
-    console.log(`💰 Current week totals: Purchases ₹${totalPurchaseAmount}, Sales ₹${totalSalesAmount}`);
+    console.log(`💰 Current week totals: Raw Purchases ₹${rawTotalPurchaseAmount}, Corrected Purchases ₹${totalPurchaseAmount}, Sales ₹${totalSalesAmount}`);
     
     // 5. Detailed breakdown by day
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -62,8 +64,12 @@ router.get('/diagnostic', async (req, res) => {
       const dayPurchases = dayRecords.filter(r => r.type === 'purchase');
       const daySales = dayRecords.filter(r => r.type === 'sale');
       
-      const purchaseAmount = dayPurchases.reduce((sum, r) => sum + r.amount, 0);
+      const rawPurchaseAmount = dayPurchases.reduce((sum, r) => sum + r.amount, 0);
+      // Apply correction factor
+      const purchaseAmount = rawPurchaseAmount / 2;
       const salesAmount = daySales.reduce((sum, r) => sum + r.amount, 0);
+      
+      console.log(`📊 ${dayNames[i]} - Raw purchase amount: ₹${rawPurchaseAmount}, Corrected: ₹${purchaseAmount}`);
       
       dailyBreakdown.push({
         day: dayNames[i],
@@ -71,7 +77,8 @@ router.get('/diagnostic', async (req, res) => {
         records: dayRecords.length,
         purchases: dayPurchases.length,
         sales: daySales.length,
-        purchaseAmount,
+        rawPurchaseAmount,
+        purchaseAmount,  // Corrected amount
         salesAmount
       });
     }
@@ -96,9 +103,11 @@ router.get('/diagnostic', async (req, res) => {
             sales: weekSales.length
           },
           amounts: {
-            purchases: totalPurchaseAmount,
+            rawPurchases: rawTotalPurchaseAmount,
+            purchases: totalPurchaseAmount,  // Corrected value (divided by 2)
             sales: totalSalesAmount,
-            profit: totalSalesAmount - totalPurchaseAmount
+            profit: totalSalesAmount - totalPurchaseAmount,
+            correctionFactor: "Purchase amounts are divided by 2 to correct for double-counting"
           },
           dailyBreakdown
         },
