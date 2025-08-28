@@ -261,14 +261,55 @@ router.get('/chart-data-fixed', async (req, res) => {
         },
         message: 'Fixed analytics data retrieved successfully'
       });
-    } else {
-      // For monthly/yearly, we can implement similar logic
+    } else if (period === 'monthly') {
+      const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+      
+      console.log(`📊 Monthly Summary:`, monthlyData.summary);
+      console.log(`📅 Year: ${monthlyData.year}`);
+      console.log(`📈 Monthly Breakdown:`, monthlyData.monthlyBreakdown);
+      
       res.json({
         success: true,
+        period: 'monthly',
+        data: {
+          summary: monthlyData.summary,
+          monthlyBreakdown: monthlyData.monthlyBreakdown,
+          year: monthlyData.year
+        },
+        debug: {
+          totalRecords,
+          hasData: totalRecords > 0
+        },
+        message: 'Monthly analytics data retrieved successfully'
+      });
+    } else if (period === 'yearly') {
+      const yearlyData = await SimpleSalesPurchase.getYearlyData();
+      
+      console.log(`📊 Yearly Summary:`, yearlyData.summary);
+      console.log(`📅 Year: ${yearlyData.year}`);
+      console.log(`📈 Yearly Data:`, yearlyData.yearlyData);
+      
+      res.json({
+        success: true,
+        period: 'yearly',
+        data: {
+          summary: yearlyData.summary,
+          yearlyData: yearlyData.yearlyData,
+          year: yearlyData.year
+        },
+        debug: {
+          totalRecords,
+          hasData: totalRecords > 0
+        },
+        message: 'Yearly analytics data retrieved successfully'
+      });
+    } else {
+      res.json({
+        success: false,
         period,
         data: {
           summary: { totalPurchases: 0, totalSales: 0, profit: 0 },
-          message: `${period} analytics not implemented yet`
+          message: `${period} analytics not supported`
         }
       });
     }
@@ -343,6 +384,62 @@ router.get('/yearly-data', async (req, res) => {
 });
 
 // Simple Real-time Sales & Purchase Chart Data (Fixed)
+// Dedicated endpoint for monthly data
+router.get('/monthly-data', async (req, res) => {
+  try {
+    console.log('🔍 Getting monthly analytics data...');
+    
+    // Check if we have any records at all (for debugging)
+    const totalRecords = await SimpleSalesPurchase.countDocuments();
+    console.log(`📊 Total SimpleSalesPurchase records in DB: ${totalRecords}`);
+    
+    const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+    
+    res.json({
+      success: true,
+      period: 'monthly',
+      summary: monthlyData.summary,
+      monthlyBreakdown: monthlyData.monthlyBreakdown,
+      year: monthlyData.year,
+      message: 'Monthly analytics data retrieved successfully'
+    });
+  } catch (error) {
+    console.error('❌ Monthly analytics error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      message: 'Failed to get monthly analytics data'
+    });
+  }
+});
+
+// Dedicated endpoint for yearly data
+router.get('/yearly-data', async (req, res) => {
+  try {
+    console.log('🔍 Getting yearly analytics data...');
+    
+    // Check if we have any records at all (for debugging)
+    const totalRecords = await SimpleSalesPurchase.countDocuments();
+    console.log(`📊 Total SimpleSalesPurchase records in DB: ${totalRecords}`);
+    
+    const yearlyData = await SimpleSalesPurchase.getYearlyData();
+    
+    res.json({
+      success: true,
+      period: 'yearly',
+      summary: yearlyData.summary,
+      yearlyData: yearlyData.yearlyData,
+      year: yearlyData.year,
+      message: 'Yearly analytics data retrieved successfully'
+    });
+  } catch (error) {
+    console.error('❌ Yearly analytics error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      message: 'Failed to get yearly analytics data'
+    });
+  }
+});
+
 router.get('/chart-data-simple', async (req, res) => {
   try {
     console.log('🔍 Starting simple analytics...');
