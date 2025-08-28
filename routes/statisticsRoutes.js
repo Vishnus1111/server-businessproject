@@ -244,12 +244,15 @@ router.get('/chart-data-fixed', async (req, res) => {
       console.log(`📅 Week Range: ${weeklyData.weekRange.start.toDateString()} to ${weeklyData.weekRange.end.toDateString()}`);
       console.log(`📈 Daily Breakdown:`, weeklyData.dailyBreakdown);
       
+      // Convert dailyBreakdown from object to array for easier frontend processing
+      const dailyBreakdownArray = weeklyData.dailyBreakdown;
+      
       res.json({
         success: true,
         period: 'weekly',
         data: {
           summary: weeklyData.summary,
-          dailyBreakdown: weeklyData.dailyBreakdown,
+          dailyBreakdown: dailyBreakdownArray,
           weekRange: weeklyData.weekRange
         },
         debug: {
@@ -275,6 +278,66 @@ router.get('/chart-data-fixed', async (req, res) => {
     res.status(500).json({ 
       error: error.message,
       message: 'Failed to get fixed analytics data'
+    });
+  }
+});
+
+// Monthly data endpoint
+router.get('/monthly-data', async (req, res) => {
+  try {
+    console.log('🔍 Getting monthly analytics data...');
+    
+    const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+    
+    console.log(`📊 Monthly Summary:`, monthlyData.summary);
+    console.log(`📈 Monthly Breakdown:`, monthlyData.monthlyBreakdown.length);
+    
+    res.json({
+      success: true,
+      period: 'monthly',
+      data: {
+        summary: monthlyData.summary,
+        monthlyBreakdown: monthlyData.monthlyBreakdown,
+        year: monthlyData.year
+      },
+      message: 'Monthly analytics data retrieved successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Monthly analytics error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      message: 'Failed to get monthly analytics data'
+    });
+  }
+});
+
+// Yearly data endpoint
+router.get('/yearly-data', async (req, res) => {
+  try {
+    console.log('🔍 Getting yearly analytics data...');
+    
+    const yearlyData = await SimpleSalesPurchase.getYearlyData();
+    
+    console.log(`📊 Yearly Summary:`, yearlyData.summary);
+    console.log(`📈 Yearly Data:`, yearlyData.yearlyData);
+    
+    res.json({
+      success: true,
+      period: 'yearly',
+      data: {
+        summary: yearlyData.summary,
+        yearlyData: yearlyData.yearlyData,
+        year: yearlyData.year
+      },
+      message: 'Yearly analytics data retrieved successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Yearly analytics error:', error);
+    res.status(500).json({ 
+      error: error.message,
+      message: 'Failed to get yearly analytics data'
     });
   }
 });
