@@ -5,25 +5,13 @@ const Product = require('../models/Product');
 // Get top 6 products by average rating (descending order)
 router.get('/top-products', async (req, res) => {
   try {
-    console.log('Getting top products by rating...');
-    
-    // First check if we have any products with ratings
-    const ratedProductsCount = await Product.countDocuments({
-      averageRating: { $gt: 0 }
-    });
-    
-    console.log(`Found ${ratedProductsCount} products with ratings`);
-    
-    // If we don't have rated products, at least include the test product
-    const query = ratedProductsCount > 0 
-      ? { status: 'active', averageRating: { $gt: 0 } } // Only products with ratings
-      : { status: 'active' }; // All active products if none are rated
-    
-    const topProducts = await Product.find(query)
+    const topProducts = await Product.find({
+      status: 'active',
+      averageRating: { $gt: 0 } // Only products with ratings
+    })
     .sort({ averageRating: -1, totalRatings: -1 }) // Sort by highest rating first, then by most ratings
     .limit(6)
     .select({
-      _id: 1,
       productId: 1,
       productName: 1,
       category: 1,
@@ -33,7 +21,6 @@ router.get('/top-products', async (req, res) => {
       availability: 1,
       averageRating: 1,
       totalRatings: 1,
-      ratingSum: 1,
       imageUrl: 1,
       unit: 1
     });

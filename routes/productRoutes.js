@@ -77,36 +77,80 @@ function generateProductId() {
   return `PROD-${timestamp}-${random}`;
 }
 
-// Parse date in DD/MM/YY format
+// Enhanced date parsing function that handles multiple formats
 function parseDate(dateString) {
   if (!dateString) {
     throw new Error('Date is required');
   }
   
-  // Check if date matches DD/MM/YY format
-  const dateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/;
-  const match = dateString.match(dateRegex);
+  console.log(`Parsing date: "${dateString}"`);
   
-  if (!match) {
-    throw new Error('Date must be in DD/MM/YY format (e.g., 31/12/25)');
+  let date;
+  
+  // Try multiple date formats in order of preference
+  
+  // 1. Try DD/MM/YY format (our preferred format)
+  const ddmmyyRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/;
+  const ddmmyyMatch = dateString.match(ddmmyyRegex);
+  
+  if (ddmmyyMatch) {
+    const [, day, month, year] = ddmmyyMatch;
+    // Convert 2-digit year to 4-digit year (assuming 20xx)
+    const fullYear = 2000 + parseInt(year);
+    
+    // Create date object (month is 0-indexed in JavaScript)
+    date = new Date(fullYear, parseInt(month) - 1, parseInt(day));
+    
+    // Validate the date
+    if (date.getFullYear() === fullYear && 
+        date.getMonth() === parseInt(month) - 1 && 
+        date.getDate() === parseInt(day)) {
+      console.log(`Successfully parsed as DD/MM/YY format: ${date.toISOString()}`);
+      return date;
+    }
   }
   
-  const [, day, month, year] = match;
+  // 2. Try DD/MM/YYYY format
+  const ddmmyyyyRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  const ddmmyyyyMatch = dateString.match(ddmmyyyyRegex);
   
-  // Convert 2-digit year to 4-digit year (assuming 20xx)
-  const fullYear = 2000 + parseInt(year);
-  
-  // Create date object (month is 0-indexed in JavaScript)
-  const date = new Date(fullYear, parseInt(month) - 1, parseInt(day));
-  
-  // Validate the date
-  if (date.getFullYear() !== fullYear || 
-      date.getMonth() !== parseInt(month) - 1 || 
-      date.getDate() !== parseInt(day)) {
-    throw new Error('Invalid date provided');
+  if (ddmmyyyyMatch) {
+    const [, day, month, year] = ddmmyyyyMatch;
+    date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    
+    if (date.getFullYear() === parseInt(year) && 
+        date.getMonth() === parseInt(month) - 1 && 
+        date.getDate() === parseInt(day)) {
+      console.log(`Successfully parsed as DD/MM/YYYY format: ${date.toISOString()}`);
+      return date;
+    }
   }
   
-  return date;
+  // 3. Try ISO format (YYYY-MM-DD)
+  const isoRegex = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+  const isoMatch = dateString.match(isoRegex);
+  
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    
+    if (date.getFullYear() === parseInt(year) && 
+        date.getMonth() === parseInt(month) - 1 && 
+        date.getDate() === parseInt(day)) {
+      console.log(`Successfully parsed as YYYY-MM-DD format: ${date.toISOString()}`);
+      return date;
+    }
+  }
+  
+  // 4. Try JavaScript's built-in Date parsing as last resort
+  date = new Date(dateString);
+  if (!isNaN(date.getTime())) {
+    console.log(`Successfully parsed using JavaScript Date: ${date.toISOString()}`);
+    return date;
+  }
+  
+  // If all parsing attempts fail, throw an error
+  throw new Error('Invalid date format. Please use DD/MM/YY format (e.g., 31/12/25)');
 }
 
 // Parse multipart form data manually (built-in Node.js only)
@@ -1047,14 +1091,18 @@ router.post("/add-multiple", async (req, res) => {
             imageUrl: null // No images for bulk upload
           });
           
-          await product.save();
+          // Save the product with explicit await
+          const savedProduct = await product.save();
+          console.log(`Successfully saved product: ${savedProduct.productName} (ID: ${savedProduct.productId})`);
+          
+          // Add to successful results
           results.successful.push({
             rowNumber,
-            productId: product.productId,
-            productName: product.productName,
-            category: product.category,
-            price: product.price,
-            message: `Row ${rowNumber}: Successfully added '${product.productName}' with ID ${product.productId}`
+            productId: savedProduct.productId,
+            productName: savedProduct.productName,
+            category: savedProduct.category,
+            price: savedProduct.sellingPrice, // Use sellingPrice directly
+            message: `Row ${rowNumber}: Successfully added '${savedProduct.productName}' with ID ${savedProduct.productId}`
           });
           
         } catch (error) {
@@ -1074,6 +1122,16 @@ router.post("/add-multiple", async (req, res) => {
       
       // Clean up temporary file
       fs.unlinkSync(tempFilePath);
+      
+      // Log detailed results
+      console.log("CSV upload results:");
+      console.log(`- Total processed: ${products.length}`);
+      console.log(`- Successfully added: ${results.successful.length}`);
+      console.log(`- Failed: ${results.failed.length}`);
+      
+      // Wait for database operations to stabilize
+      console.log("Waiting for database operations to complete...");
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Generate summary messages for toast notifications
       const summaryMessages = [];
@@ -1115,15 +1173,23 @@ router.post("/add-multiple", async (req, res) => {
       }
       
       // Overall status
-      const overallSuccess = results.failed.length === 0;
+      const overallSuccess = results.successful.length > 0;
       const statusMessage = overallSuccess 
-        ? `🎉 All ${results.successful.length} products uploaded successfully!`
-        : `⚠️ ${results.successful.length}/${products.length} products uploaded successfully`;
+        ? `🎉 ${results.successful.length} products uploaded successfully!`
+        : `⚠️ No products were uploaded. Please check the CSV format.`;
+      
+      // Generate a unique upload ID for tracking this batch
+      const uploadId = `upload-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+      
+      // Log success with ID for tracking
+      console.log(`🎉 CSV upload complete - ID: ${uploadId}, Success: ${results.successful.length}, Failed: ${results.failed.length}`);
       
       res.status(200).json({
         success: overallSuccess,
         message: statusMessage,
         summary: summaryMessages,
+        uploadId: uploadId, // Include the unique upload ID
+        timestamp: Date.now(),
         results: {
           total: products.length,
           successful: results.successful.length,
@@ -1249,11 +1315,25 @@ router.get("/search", async (req, res) => {
 // Get all products
 router.get("/all", async (req, res) => {
   try {
-    const products = await Product.find();
+    // Log request information
+    console.log("GET /api/products/all request received");
+    console.log("Query params:", req.query);
+    
+    // Set cache control headers
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    
+    // Fetch all products sorted by newest first
+    const products = await Product.find().sort({ createdAt: -1 });
+    
+    console.log(`Returning ${products.length} products`);
+    
     res.status(200).json({
       success: true,
       count: products.length,
-      products
+      products,
+      timestamp: Date.now() // Add timestamp to response
     });
   } catch (error) {
     console.error("Error fetching products:", error);

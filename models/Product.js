@@ -99,33 +99,51 @@ const productSchema = new mongoose.Schema({
 
 // Update availability and status before saving
 productSchema.pre('save', function(next) {
-  const currentDate = new Date();
-  const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
-  const expiryDateOnly = new Date(this.expiryDate.getFullYear(), this.expiryDate.getMonth(), this.expiryDate.getDate());
-  
-  // Set price field to sellingPrice for backward compatibility
-  if (this.sellingPrice) {
-    this.price = this.sellingPrice;
-  }
-  
-  // Check if product has expired
-  if (expiryDateOnly < today) {
-    this.status = 'expired';
-    this.availability = 'Expired';
-  } else {
-    this.status = 'active';
-    // Update availability based on quantity
-    if (this.quantity === 0) {
-      this.availability = 'Out of stock';
-    } else if (this.quantity <= this.thresholdValue) {
-      this.availability = 'Low stock';
-    } else {
-      this.availability = 'In stock';
+  try {
+    console.log(`Pre-save hook for product: ${this.productName}`);
+    
+    // Ensure all dates are valid Date objects
+    if (!(this.expiryDate instanceof Date) || isNaN(this.expiryDate)) {
+      console.error(`Invalid expiry date for product ${this.productName}: ${this.expiryDate}`);
+      this.expiryDate = new Date(this.expiryDate);
+      if (isNaN(this.expiryDate)) {
+        throw new Error(`Invalid expiry date format: ${this.expiryDate}`);
+      }
     }
+    
+    const currentDate = new Date();
+    const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+    const expiryDateOnly = new Date(this.expiryDate.getFullYear(), this.expiryDate.getMonth(), this.expiryDate.getDate());
+    
+    // Set price field to sellingPrice for backward compatibility
+    if (this.sellingPrice) {
+      this.price = this.sellingPrice;
+    }
+    
+    // Check if product has expired
+    if (expiryDateOnly < today) {
+      this.status = 'expired';
+      this.availability = 'Expired';
+      console.log(`Product ${this.productName} marked as expired (${expiryDateOnly} < ${today})`);
+    } else {
+      this.status = 'active';
+      // Update availability based on quantity
+      if (this.quantity === 0) {
+        this.availability = 'Out of stock';
+      } else if (this.quantity <= this.thresholdValue) {
+        this.availability = 'Low stock';
+      } else {
+        this.availability = 'In stock';
+      }
+      console.log(`Product ${this.productName} availability set to: ${this.availability}`);
+    }
+    
+    this.lastStatusCheck = new Date();
+    next();
+  } catch (error) {
+    console.error(`Error in Product pre-save hook: ${error.message}`);
+    next(error); // Pass error to next middleware
   }
-  
-  this.lastStatusCheck = new Date();
-  next();
 });
 
 module.exports = mongoose.model("Product", productSchema);

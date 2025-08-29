@@ -12,7 +12,6 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const invoiceRoutes = require("./routes/invoiceRoutes");
 const statisticsRoutes = require("./routes/statisticsRoutes");
 const topProductsRoutes = require("./routes/topProductsRoutes");
-const diagnosticRoutes = require("./routes/diagnosticRoutes");
 const dataFixRoutes = require("./routes/dataFixRoutes");
 const profitFixRoutes = require("./routes/profitFixRoutes");
 const cronJobService = require("./services/cronJobService");
@@ -49,7 +48,6 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/statistics", statisticsRoutes);
 app.use("/api/top-products", topProductsRoutes);
-app.use("/api/diagnostic", diagnosticRoutes);
 app.use("/api/data-fix", dataFixRoutes);
 app.use("/api/profit-fix", profitFixRoutes);
 
