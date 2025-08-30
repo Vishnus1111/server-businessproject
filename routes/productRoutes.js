@@ -1094,6 +1094,26 @@ router.post("/add-multiple", async (req, res) => {
           // Save the product with explicit await
           const savedProduct = await product.save();
           console.log(`Successfully saved product: ${savedProduct.productName} (ID: ${savedProduct.productId})`);
+
+          // Track purchase in simplified analytics for CSV upload as well
+          try {
+            console.log(`🔍 Tracking Purchase (CSV): ${savedProduct.productName}`);
+            console.log(`💰 Purchase Amount: ₹${savedProduct.costPrice} × ${savedProduct.quantity} = ₹${savedProduct.costPrice * savedProduct.quantity}`);
+            const trackingResult = await SimpleSalesPurchase.addPurchase({
+              _id: savedProduct._id,
+              name: savedProduct.productName,
+              costPrice: savedProduct.costPrice,
+              quantity: savedProduct.quantity
+            });
+            console.log(`✅ Purchase tracked successfully (CSV):`, {
+              productName: savedProduct.productName,
+              amount: savedProduct.costPrice * savedProduct.quantity,
+              trackingId: trackingResult._id
+            });
+          } catch (trackingError) {
+            console.error('❌ Error tracking purchase (CSV):', trackingError);
+            // Don't fail CSV addition if tracking fails
+          }
           
           // Add to successful results
           results.successful.push({

@@ -6,6 +6,14 @@ const SalesPurchase = require('../models/SalesPurchase');
 const SimpleSalesPurchase = require('../models/SimpleSalesPurchase');
 const moment = require('moment');
 
+// Disable caching for all statistics endpoints to ensure fresh data
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 // Debug endpoint to test SimpleSalesPurchase directly
 router.get('/debug-tracking', async (req, res) => {
   try {

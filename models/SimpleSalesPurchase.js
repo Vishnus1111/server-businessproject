@@ -159,98 +159,82 @@ simpleSalesPurchaseSchema.statics.addSale = async function(orderData) {
 // Static method to get weekly data
 simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
   try {
-    const currentDate = new Date();
-    const startOfWeek = new Date(currentDate);
-    const day = startOfWeek.getDay();
-    const diff = startOfWeek.getDate() - day; // Sunday is 0
-    startOfWeek.setDate(diff);
-    startOfWeek.setHours(0, 0, 0, 0);
-    
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 6);
-    endOfWeek.setHours(23, 59, 59, 999);
-    
-    console.log(`📅 Getting transactions for week: ${startOfWeek.toISOString()} to ${endOfWeek.toISOString()}`);
-    
-    // Get all transactions for this week
-    const weekTransactions = await this.find({
-      date: { $gte: startOfWeek, $lte: endOfWeek }
+    // Use a rolling 7-day window ending today to avoid empty charts on Sundays
+    const today = new Date();
+    const startOfWindow = new Date(today);
+    startOfWindow.setDate(today.getDate() - 6);
+    startOfWindow.setHours(0, 0, 0, 0);
+
+    const endOfWindow = new Date(today);
+    endOfWindow.setHours(23, 59, 59, 999);
+
+    console.log(`📅 Getting transactions for last 7 days: ${startOfWindow.toISOString()} to ${endOfWindow.toISOString()}`);
+
+    // Get all transactions for this window
+    const windowTransactions = await this.find({
+      date: { $gte: startOfWindow, $lte: endOfWindow }
     }).sort({ date: 1 });
-    
-    console.log(`📊 Found ${weekTransactions.length} transactions for current week`);
-    
-    // Debug the transactions found
-    if (weekTransactions.length > 0) {
-      console.log(`📄 First transaction: ${weekTransactions[0].type} - ${weekTransactions[0].amount} - ${weekTransactions[0].date}`);
-      console.log(`📄 Last transaction: ${weekTransactions[weekTransactions.length-1].type} - ${weekTransactions[weekTransactions.length-1].amount} - ${weekTransactions[weekTransactions.length-1].date}`);
+
+    console.log(`📊 Found ${windowTransactions.length} transactions in last 7 days`);
+
+    if (windowTransactions.length > 0) {
+      console.log(`📄 First tx: ${windowTransactions[0].type} - ${windowTransactions[0].amount} - ${windowTransactions[0].date}`);
+      console.log(`📄 Last tx: ${windowTransactions[windowTransactions.length-1].type} - ${windowTransactions[windowTransactions.length-1].amount} - ${windowTransactions[windowTransactions.length-1].date}`);
     }
-    
+
     // Calculate totals
-    const purchases = weekTransactions.filter(t => t.type === 'purchase');
-    const sales = weekTransactions.filter(t => t.type === 'sale');
-    
-    // Calculate raw purchases sum
+    const purchases = windowTransactions.filter(t => t.type === 'purchase');
+    const sales = windowTransactions.filter(t => t.type === 'sale');
+
     const rawPurchasesTotal = purchases.reduce((sum, t) => sum + t.amount, 0);
-    
-    // Apply correction factor to fix the duplicate counting issue
-    // Dividing by 2 as per requirement since the values are doubled
-    const totalPurchases = rawPurchasesTotal / 2;
-    console.log(`📊 PURCHASE CORRECTION: Raw total: ₹${rawPurchasesTotal}, Corrected total: ₹${totalPurchases}`);
-    
+    const totalPurchases = rawPurchasesTotal / 2; // correction factor
     const totalSales = sales.reduce((sum, t) => sum + t.amount, 0);
-    
-    // NEW: Calculate profit directly from sale records instead of sales - purchases
     const totalProfit = sales.reduce((sum, t) => sum + (t.profit || 0), 0);
-    console.log(`📊 PROFIT CALCULATION: Using actual profit from sales: ₹${totalProfit}`);
-    
-    // Create daily breakdown
+
+    // Build daily breakdown for each day in the 7-day window
     const dailyData = [];
     for (let i = 0; i < 7; i++) {
-      const currentDay = new Date(startOfWeek);
-      currentDay.setDate(startOfWeek.getDate() + i);
-      
-      const dayTransactions = weekTransactions.filter(t => {
-        const transactionDate = new Date(t.date);
-        return transactionDate.toDateString() === currentDay.toDateString();
+      const currentDay = new Date(startOfWindow);
+      currentDay.setDate(startOfWindow.getDate() + i);
+      const nextDay = new Date(currentDay);
+      nextDay.setHours(23, 59, 59, 999);
+
+      const dayTransactions = windowTransactions.filter(t => {
+        const d = new Date(t.date);
+        return d >= currentDay && d <= nextDay;
       });
-      
-      // Calculate raw purchase total for the day
+
       const rawDayPurchases = dayTransactions.filter(t => t.type === 'purchase').reduce((sum, t) => sum + t.amount, 0);
-      
-      // Apply the same correction factor to daily purchases
-      const dayPurchases = rawDayPurchases / 2;
-      
+      const dayPurchases = rawDayPurchases / 2; // correction
       const daySales = dayTransactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + t.amount, 0);
-      
-      // Calculate day profit directly from sale records
       const dayProfit = dayTransactions.filter(t => t.type === 'sale').reduce((sum, t) => sum + (t.profit || 0), 0);
-      
-      console.log(`📅 ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]} purchases: Raw: ₹${rawDayPurchases}, Corrected: ₹${dayPurchases}`);
-      console.log(`📅 ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]} profit: ₹${dayProfit}`);
-      
+
+      const dayName = currentDay.toLocaleDateString('en-US', { weekday: 'long' });
+      console.log(`📅 ${dayName} purchases: Raw ₹${rawDayPurchases} -> Corrected ₹${dayPurchases}, Sales ₹${daySales}`);
+
       dailyData.push({
         date: currentDay.toDateString(),
-        day: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i],
+        day: dayName,
         purchases: dayPurchases,
         sales: daySales,
-        profit: dayProfit, // Use actual profit from sales
+        profit: dayProfit,
         transactionCount: dayTransactions.length
       });
     }
-    
+
     return {
       weekRange: {
-        start: startOfWeek,
-        end: endOfWeek
+        start: startOfWindow,
+        end: endOfWindow
       },
       summary: {
         totalPurchases,
         totalSales,
-        profit: totalProfit, // Use actual profit from sales instead of sales - purchases
-        totalTransactions: weekTransactions.length
+        profit: totalProfit,
+        totalTransactions: windowTransactions.length
       },
       dailyBreakdown: dailyData,
-      transactions: weekTransactions
+      transactions: windowTransactions
     };
   } catch (error) {
     console.error('❌ Error getting weekly data:', error);
