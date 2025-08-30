@@ -4,6 +4,7 @@ const Product = require('../models/Product');
 const Order = require('../models/Order');
 const SalesPurchase = require('../models/SalesPurchase');
 const SimpleSalesPurchase = require('../models/SimpleSalesPurchase');
+const Invoice = require('../models/Invoice');
 
 // Test SalesPurchase data endpoint
 router.get('/test-salespurchase', async (req, res) => {
@@ -209,10 +210,37 @@ router.get('/stats', async (req, res) => {
       revenue: revenueData[0]?.totalRevenue || 0
     };
 
+    // Inventory Summary (quantity in hand and to be received)
+    // Quantity in hand = sum of quantities of all products
+    const qtyAgg = await Product.aggregate([
+      { $group: { _id: null, totalQuantity: { $sum: '$quantity' } } }
+    ]);
+    const totalQuantityInHand = qtyAgg[0]?.totalQuantity || 0;
+
+    // To be received = sum of quantities from invoices where status is 'Unpaid'
+    const expectedAgg = await Invoice.aggregate([
+      { $match: { status: 'Unpaid' } },
+      { $group: { _id: null, expectedStock: { $sum: '$quantityOrdered' } } }
+    ]);
+    const expectedStock = expectedAgg[0]?.expectedStock || 0;
+
+    // Product Summary
+  // Number of suppliers = count of products that are NOT expired
+  const suppliersCount = await Product.countDocuments({ status: { $ne: 'expired' } });
+
     const response = {
       success: true,
       period: `Last ${days} days`,
       generatedAt: new Date(),
+      // New metrics added for Home page side panels (non-breaking addition)
+      inventoryMetrics: {
+        totalQuantity: totalQuantityInHand,
+        expectedStock
+      },
+      productMetrics: {
+        suppliersCount,
+        categoriesCount: categoriesCount[0]?.total || 0
+      },
       overallInventory: {
         categories: categoriesCount[0]?.total || 0,
         lastDays: days,
