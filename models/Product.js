@@ -1,6 +1,9 @@
 const mongoose = require("mongoose");
 
 const productSchema = new mongoose.Schema({
+  // Ownership fields for per-account isolation
+  ownerEmail: { type: String, index: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
   productName: {
     type: String,
     required: true,

@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const SalesPurchase = require('../models/SalesPurchase');
@@ -7,14 +8,14 @@ const SimpleSalesPurchase = require('../models/SimpleSalesPurchase');
 const Invoice = require('../models/Invoice');
 
 // Test SalesPurchase data endpoint
-router.get('/test-salespurchase', async (req, res) => {
+router.get('/test-salespurchase', auth, async (req, res) => {
   try {
     console.log('🔍 Testing SimpleSalesPurchase collection...');
-    const count = await SimpleSalesPurchase.countDocuments();
+  const count = await SimpleSalesPurchase.countDocuments({ ownerEmail: req.user.email });
     console.log(`📊 SimpleSalesPurchase documents count: ${count}`);
     
     if (count > 0) {
-      const recent = await SimpleSalesPurchase.find().sort({ createdAt: -1 }).limit(5);
+  const recent = await SimpleSalesPurchase.find({ ownerEmail: req.user.email }).sort({ createdAt: -1 }).limit(5);
       console.log('📄 Recent 5 documents:');
       recent.forEach((doc, index) => {
         console.log(`${index + 1}. Type: ${doc.type}, Amount: ₹${doc.amount}, Date: ${doc.createdAt}`);
@@ -34,7 +35,7 @@ router.get('/test-salespurchase', async (req, res) => {
 });
 
 // Get comprehensive dashboard statistics
-router.get('/stats', async (req, res) => {
+router.get('/stats', auth, async (req, res) => {
   try {
     // Fixed to 7 days only as per requirements
     const days = 7;
@@ -42,24 +43,27 @@ router.get('/stats', async (req, res) => {
     daysAgo.setDate(daysAgo.getDate() - days);
 
     // Overall Inventory Stats
-    const totalProducts = await Product.countDocuments();
-    const activeProducts = await Product.countDocuments({ status: 'active' });
+  const totalProducts = await Product.countDocuments({ ownerEmail: req.user.email });
+  const activeProducts = await Product.countDocuments({ ownerEmail: req.user.email, status: 'active' });
     
     // Categories count
     const categoriesCount = await Product.aggregate([
-      { $group: { _id: '$category' } },
+  { $match: { ownerEmail: req.user.email } },
+  { $group: { _id: '$category' } },
       { $count: 'total' }
     ]);
     
     // Total Products with revenue (last X days)
     const recentProducts = await Product.countDocuments({
+      ownerEmail: req.user.email,
       createdAt: { $gte: daysAgo }
     });
     
     // Calculate total revenue from orders (last X days)
     const revenueData = await Order.aggregate([
-      {
+    {
         $match: {
+      ownerEmail: req.user.email,
           createdAt: { $gte: daysAgo },
           orderStatus: { $ne: 'cancelled' }
         }
@@ -77,6 +81,7 @@ router.get('/stats', async (req, res) => {
     const topSellingProducts = await Order.aggregate([
       {
         $match: {
+          ownerEmail: req.user.email,
           createdAt: { $gte: daysAgo },
           orderStatus: { $ne: 'cancelled' }
         }
@@ -96,8 +101,9 @@ router.get('/stats', async (req, res) => {
 
     // Low Stock Analysis - only count products that were ordered
     const lowStockProductsOrdered = await Order.aggregate([
-      {
+    {
         $match: {
+      ownerEmail: req.user.email,
           createdAt: { $gte: daysAgo },
           orderStatus: { $ne: 'cancelled' }
         }
@@ -113,6 +119,7 @@ router.get('/stats', async (req, res) => {
       {
         $unwind: { path: '$productData', preserveNullAndEmptyArrays: true }
       },
+    { $match: { 'productData.ownerEmail': req.user.email } },
       {
         $match: {
           'productData.availability': 'Low stock'
@@ -132,19 +139,23 @@ router.get('/stats', async (req, res) => {
 
     // Recent orders for trending
     const recentOrders = await Order.countDocuments({
+      ownerEmail: req.user.email,
       createdAt: { $gte: daysAgo }
     });
 
     // Get some additional stats that were moved
     const outOfStockProducts = await Product.countDocuments({
+      ownerEmail: req.user.email,
       availability: 'Out of stock'
     });
 
     const expiredProducts = await Product.countDocuments({
+      ownerEmail: req.user.email,
       status: 'expired'
     });
 
     const lowStockProducts = await Product.countDocuments({
+      ownerEmail: req.user.email,
       availability: 'Low stock',
       status: 'active'
     });
@@ -153,8 +164,9 @@ router.get('/stats', async (req, res) => {
 
     // Calculate cost vs revenue (if cost data available)
     const costRevenueData = await Order.aggregate([
-      {
+    {
         $match: {
+      ownerEmail: req.user.email,
           createdAt: { $gte: daysAgo },
           orderStatus: { $ne: 'cancelled' }
         }
@@ -173,6 +185,7 @@ router.get('/stats', async (req, res) => {
           preserveNullAndEmptyArrays: true
         }
       },
+    { $match: { 'productData.ownerEmail': req.user.email } },
       {
         $group: {
           _id: null,
@@ -191,9 +204,7 @@ router.get('/stats', async (req, res) => {
 
     // Stock levels distribution
     const stockDistribution = await Product.aggregate([
-      {
-        $match: { status: 'active' }
-      },
+      { $match: { status: 'active', ownerEmail: req.user.email } },
       {
         $group: {
           _id: '$availability',
@@ -213,20 +224,21 @@ router.get('/stats', async (req, res) => {
     // Inventory Summary (quantity in hand and to be received)
     // Quantity in hand = sum of quantities of all products
     const qtyAgg = await Product.aggregate([
+      { $match: { ownerEmail: req.user.email } },
       { $group: { _id: null, totalQuantity: { $sum: '$quantity' } } }
     ]);
     const totalQuantityInHand = qtyAgg[0]?.totalQuantity || 0;
 
     // To be received = sum of quantities from invoices where status is 'Unpaid'
     const expectedAgg = await Invoice.aggregate([
-      { $match: { status: 'Unpaid' } },
+      { $match: { status: 'Unpaid', ownerEmail: req.user.email } },
       { $group: { _id: null, expectedStock: { $sum: '$quantityOrdered' } } }
     ]);
     const expectedStock = expectedAgg[0]?.expectedStock || 0;
 
     // Product Summary
   // Number of suppliers = count of products that are NOT expired
-  const suppliersCount = await Product.countDocuments({ status: { $ne: 'expired' } });
+  const suppliersCount = await Product.countDocuments({ status: { $ne: 'expired' }, ownerEmail: req.user.email });
 
     const response = {
       success: true,
@@ -296,7 +308,7 @@ router.get('/stats', async (req, res) => {
 });
 
 // Get real-time inventory summary (matching your image format)
-router.get('/inventory-summary', async (req, res) => {
+router.get('/inventory-summary', auth, async (req, res) => {
   try {
     // Fixed to 7 days only as per requirements
     const days = 7;
@@ -305,21 +317,24 @@ router.get('/inventory-summary', async (req, res) => {
 
     // Categories count
     const categoriesResult = await Product.aggregate([
+      { $match: { ownerEmail: req.user.email } },
       { $group: { _id: '$category' } },
       { $count: 'total' }
     ]);
     const categoriesCount = categoriesResult[0]?.total || 0;
 
     // Total Products with recent count
-    const totalProducts = await Product.countDocuments();
+  const totalProducts = await Product.countDocuments({ ownerEmail: req.user.email });
     const recentProducts = await Product.countDocuments({
+      ownerEmail: req.user.email,
       createdAt: { $gte: daysAgo }
     });
 
     // Revenue calculation from orders
     const revenueData = await Order.aggregate([
-      {
+    {
         $match: {
+      ownerEmail: req.user.email,
           createdAt: { $gte: daysAgo },
           orderStatus: { $ne: 'cancelled' }
         }
@@ -354,8 +369,9 @@ router.get('/inventory-summary', async (req, res) => {
 
     // Cost calculation for top selling
     const topProductCost = await Order.aggregate([
-      {
+    {
         $match: {
+      ownerEmail: req.user.email,
           createdAt: { $gte: daysAgo },
           orderStatus: { $ne: 'cancelled' }
         }
@@ -371,6 +387,7 @@ router.get('/inventory-summary', async (req, res) => {
       {
         $unwind: { path: '$productData', preserveNullAndEmptyArrays: true }
       },
+    { $match: { 'productData.ownerEmail': req.user.email } },
       {
         $group: {
           _id: null,
@@ -423,10 +440,12 @@ router.get('/inventory-summary', async (req, res) => {
     const lowStockOrderedCount = lowStockProductsOrdered[0]?.totalLowStockOrdered || 0;
 
     const orderedCount = await Order.countDocuments({
+      ownerEmail: req.user.email,
       createdAt: { $gte: daysAgo }
     });
 
     const notInStockCount = await Product.countDocuments({
+      ownerEmail: req.user.email,
       $or: [
         { availability: 'Out of stock' },
         { status: 'expired' }

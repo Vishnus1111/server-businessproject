@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const Product = require('../models/Product');
 
 // Get top 6 products by average rating (descending order)
-router.get('/top-products', async (req, res) => {
+router.get('/top-products', auth, async (req, res) => {
   try {
     const topProducts = await Product.find({
+      ownerEmail: req.user.email,
       status: 'active',
       averageRating: { $gt: 0 } // Only products with ratings
     })
@@ -59,11 +61,12 @@ router.get('/top-products', async (req, res) => {
 });
 
 // Get all products sorted by rating (for admin/analysis)
-router.get('/products-by-rating', async (req, res) => {
+router.get('/products-by-rating', auth, async (req, res) => {
   try {
     const { page = 1, limit = 20, minRating = 0 } = req.query;
     
     const products = await Product.find({
+      ownerEmail: req.user.email,
       status: 'active',
       averageRating: { $gte: parseFloat(minRating) }
     })
@@ -81,6 +84,7 @@ router.get('/products-by-rating', async (req, res) => {
     });
 
     const totalProducts = await Product.countDocuments({
+      ownerEmail: req.user.email,
       status: 'active',
       averageRating: { $gte: parseFloat(minRating) }
     });
@@ -108,11 +112,11 @@ router.get('/products-by-rating', async (req, res) => {
 });
 
 // Get rating statistics for a specific product
-router.get('/product/:productId/ratings', async (req, res) => {
+router.get('/product/:productId/ratings', auth, async (req, res) => {
   try {
     const { productId } = req.params;
     
-    const product = await Product.findOne({ productId: productId })
+  const product = await Product.findOne({ productId: productId, ownerEmail: req.user.email })
       .select('productName averageRating totalRatings ratingSum');
     
     if (!product) {
@@ -125,7 +129,7 @@ router.get('/product/:productId/ratings', async (req, res) => {
     // Get rating distribution from orders
     const Order = require('../models/Order');
     const ratingDistribution = await Order.aggregate([
-      { $match: { productId: productId, rating: { $exists: true, $ne: null } } },
+      { $match: { productId: productId, rating: { $exists: true, $ne: null }, ownerEmail: req.user.email } },
       { $group: { _id: '$rating', count: { $sum: 1 } } },
       { $sort: { _id: -1 } }
     ]);

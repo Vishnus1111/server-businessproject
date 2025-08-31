@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 
 // Rate a product directly without requiring a previous order
-router.post('/rate-product', async (req, res) => {
+router.post('/rate-product', auth, async (req, res) => {
   try {
     console.log('Rating request received:', req.body);
     const { productId, rating } = req.body;
@@ -23,12 +24,12 @@ router.post('/rate-product', async (req, res) => {
     
     // First try to find by MongoDB _id if it looks like a valid ObjectId
     if (productId.match(/^[0-9a-fA-F]{24}$/)) {
-      product = await Product.findById(productId);
+      product = await Product.findOne({ _id: productId, ownerEmail: req.user.email });
     }
     
     // If not found, try by productId field
     if (!product) {
-      product = await Product.findOne({ productId });
+      product = await Product.findOne({ productId, ownerEmail: req.user.email });
     }
     
     // Still not found
@@ -57,7 +58,9 @@ router.post('/rate-product', async (req, res) => {
       customerInfo: {
         name: 'Test Customer'
       },
-      rating: rating
+      rating: rating,
+      ownerEmail: req.user.email,
+      userId: req.user.id
     });
     
     await testOrder.save();

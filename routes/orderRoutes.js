@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const Invoice = require('../models/Invoice');
@@ -7,11 +8,11 @@ const SalesPurchase = require('../models/SalesPurchase');
 const SimpleSalesPurchase = require('../models/SimpleSalesPurchase');
 
 // Get product details for ordering (including image and description)
-router.get('/product/:productId', async (req, res) => {
+router.get('/product/:productId', auth, async (req, res) => {
   try {
     const { productId } = req.params;
     
-    const product = await Product.findOne({ productId: productId });
+  const product = await Product.findOne({ productId: productId, ownerEmail: req.user.email });
     
     if (!product) {
       return res.status(404).json({
@@ -58,7 +59,7 @@ router.get('/product/:productId', async (req, res) => {
 });
 
 // Check product availability before ordering
-router.post('/check-availability', async (req, res) => {
+router.post('/check-availability', auth, async (req, res) => {
   try {
     const { productId, requestedQuantity } = req.body;
 
@@ -69,7 +70,7 @@ router.post('/check-availability', async (req, res) => {
       });
     }
 
-    const product = await Product.findOne({ productId: productId });
+  const product = await Product.findOne({ productId: productId, ownerEmail: req.user.email });
     
     if (!product) {
       return res.status(404).json({
@@ -132,7 +133,7 @@ router.post('/check-availability', async (req, res) => {
 });
 
 // Place an order
-router.post('/place-order', async (req, res) => {
+router.post('/place-order', auth, async (req, res) => {
   try {
     const { 
       productId, 
@@ -166,7 +167,7 @@ router.post('/place-order', async (req, res) => {
     }
 
     // Find the product
-    const product = await Product.findOne({ productId: productId });
+  const product = await Product.findOne({ productId: productId, ownerEmail: req.user.email });
     
     if (!product) {
       return res.status(404).json({
@@ -217,7 +218,9 @@ router.post('/place-order', async (req, res) => {
       quantityOrdered: quantityOrdered,
       pricePerUnit: pricePerUnit,
       totalAmount: totalAmount,
-      rating: rating // Mandatory field
+      rating: rating, // Mandatory field
+      ownerEmail: req.user.email,
+      userId: req.user.id
     };
 
     // Add optional fields if provided
@@ -240,7 +243,7 @@ router.post('/place-order', async (req, res) => {
       console.log(`💰 Sale Amount: ₹${order.pricePerUnit} × ${order.quantityOrdered} = ₹${order.totalAmount}`);
       
       // Get the cost price from the product to calculate profit correctly
-      const product = await Product.findOne({ productId: order.productId });
+  const product = await Product.findOne({ productId: order.productId, ownerEmail: req.user.email });
       
       if (!product) {
         console.warn(`⚠️ Cannot find product ${order.productId} to calculate profit. Using default profit calculation.`);
@@ -267,7 +270,7 @@ router.post('/place-order', async (req, res) => {
         }]
       };
       
-      const trackingResult = await SimpleSalesPurchase.addSale(salesTrackingData);
+  const trackingResult = await SimpleSalesPurchase.addSale(salesTrackingData, req.user);
       console.log(`✅ Sale tracked successfully (Fixed):`, {
         productName: order.productName,
         amount: order.totalAmount,
@@ -298,7 +301,7 @@ router.post('/place-order', async (req, res) => {
 
     await product.save();
 
-    // Create invoice automatically (Force restart test v2)
+  // Create invoice automatically (Force restart test v2)
     try {
       const invoiceData = {
         orderId: order.orderId,
@@ -313,7 +316,9 @@ router.post('/place-order', async (req, res) => {
         pricePerUnit: pricePerUnit,
         totalAmount: totalAmount,
         orderDate: order.createdAt,
-        status: 'Unpaid'
+        status: 'Unpaid',
+        ownerEmail: req.user.email,
+        userId: req.user.id
       };
 
       console.log('🔄 Creating invoice with data:', JSON.stringify(invoiceData, null, 2));
@@ -361,11 +366,11 @@ router.post('/place-order', async (req, res) => {
 });
 
 // Get order details
-router.get('/order/:orderId', async (req, res) => {
+router.get('/order/:orderId', auth, async (req, res) => {
   try {
     const { orderId } = req.params;
     
-    const order = await Order.findOne({ orderId: orderId });
+  const order = await Order.findOne({ orderId: orderId, ownerEmail: req.user.email });
     
     if (!order) {
       return res.status(404).json({
@@ -390,11 +395,11 @@ router.get('/order/:orderId', async (req, res) => {
 });
 
 // Get all orders (for admin/management)
-router.get('/orders', async (req, res) => {
+router.get('/orders', auth, async (req, res) => {
   try {
     const { status, page = 1, limit = 10 } = req.query;
     
-    let filter = {};
+    let filter = { ownerEmail: req.user.email };
     if (status) {
       filter.orderStatus = status;
     }
@@ -430,7 +435,7 @@ router.get('/orders', async (req, res) => {
 });
 
 // Update order status
-router.patch('/order/:orderId/status', async (req, res) => {
+router.patch('/order/:orderId/status', auth, async (req, res) => {
   try {
     const { orderId } = req.params;
     const { status } = req.body;
@@ -445,7 +450,7 @@ router.patch('/order/:orderId/status', async (req, res) => {
       });
     }
 
-    const order = await Order.findOne({ orderId: orderId });
+  const order = await Order.findOne({ orderId: orderId, ownerEmail: req.user.email });
     
     if (!order) {
       return res.status(404).json({
@@ -456,7 +461,7 @@ router.patch('/order/:orderId/status', async (req, res) => {
 
     // If cancelling an order, return the quantity back to inventory
     if (status === 'cancelled' && order.orderStatus !== 'cancelled') {
-      const product = await Product.findOne({ productId: order.productId });
+  const product = await Product.findOne({ productId: order.productId, ownerEmail: req.user.email });
       if (product) {
         product.quantity += order.quantityOrdered;
         

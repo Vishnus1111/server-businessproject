@@ -15,6 +15,11 @@ const topProductsRoutes = require("./routes/topProductsRoutes");
 const dataFixRoutes = require("./routes/dataFixRoutes");
 const profitFixRoutes = require("./routes/profitFixRoutes");
 const cronJobService = require("./services/cronJobService");
+const Product = require("./models/Product");
+const Order = require("./models/Order");
+const Invoice = require("./models/Invoice");
+const SimpleSalesPurchase = require("./models/SimpleSalesPurchase");
+const User = require("./models/User");
 
 dotenv.config();
 
@@ -76,6 +81,46 @@ mongoose
     
     // Start the daily cron job after database connection
     cronJobService.startDailyCronJob();
+    // Ownership migration: ensure existing data is isolated under the correct account
+    (async () => {
+      try {
+        // Correct target owner email
+        const targetEmail = 'vishnus.21ece@cambridge.edu.in';
+        const legacyTypoEmail = 'vishus.21ece@cambridge.edu.in';
+
+        let user = await User.findOne({ email: targetEmail });
+        if (!user) {
+          console.warn(`Owner user not found for ${targetEmail}. Existing data will be tagged with ownerEmail only.`);
+        }
+        const ownerId = user?._id;
+
+        // 1) Tag any documents missing ownerEmail
+        const tagFilter = { $or: [ { ownerEmail: { $exists: false } }, { ownerEmail: null } ] };
+        const ownerSet = { $set: { ownerEmail: targetEmail, ...(ownerId ? { userId: ownerId } : {}) } };
+
+        const [pRes, oRes, iRes, sRes] = await Promise.all([
+          Product.updateMany(tagFilter, ownerSet),
+          Order.updateMany(tagFilter, ownerSet),
+          Invoice.updateMany(tagFilter, ownerSet),
+          SimpleSalesPurchase.updateMany(tagFilter, ownerSet)
+        ]);
+
+        // 2) Retag any documents that were previously tagged with the legacy/typo email
+        const legacyFilter = { ownerEmail: legacyTypoEmail };
+        const legacySet = { $set: { ownerEmail: targetEmail, ...(ownerId ? { userId: ownerId } : {}) } };
+        const [lp, lo, li, ls] = await Promise.all([
+          Product.updateMany(legacyFilter, legacySet),
+          Order.updateMany(legacyFilter, legacySet),
+          Invoice.updateMany(legacyFilter, legacySet),
+          SimpleSalesPurchase.updateMany(legacyFilter, legacySet)
+        ]);
+
+        console.log(`Ownership tagging done -> Missing owner -> Products: ${pRes.modifiedCount}, Orders: ${oRes.modifiedCount}, Invoices: ${iRes.modifiedCount}, SimpleSP: ${sRes.modifiedCount}`);
+        console.log(`Legacy email retagging -> Products: ${lp.modifiedCount}, Orders: ${lo.modifiedCount}, Invoices: ${li.modifiedCount}, SimpleSP: ${ls.modifiedCount}`);
+      } catch (e) {
+        console.error('Error during ownership migration:', e.message);
+      }
+    })();
     
     // For testing purposes, you can also start a test cron job that runs every minute
     // cronJobService.startTestCronJob();

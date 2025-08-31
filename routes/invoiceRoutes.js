@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const Invoice = require('../models/Invoice');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 
 // Get all invoices with optional filtering
-router.get('/', async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     // Filter options
-    const filter = {};
+  const filter = { ownerEmail: req.user.email };
     if (req.query.status) {
       filter.status = req.query.status;
     }
@@ -41,7 +42,7 @@ router.get('/', async (req, res) => {
 });
 
 // Search invoices across all fields
-router.get('/search', async (req, res) => {
+router.get('/search', auth, async (req, res) => {
   try {
     const { query, page = 1, limit = 20, status } = req.query;
     
@@ -59,6 +60,7 @@ router.get('/search', async (req, res) => {
 
     // Build search conditions
     const searchConditions = {
+      ownerEmail: req.user.email,
       $or: [
         { invoiceId: searchRegex },
         { referenceNumber: searchRegex },
@@ -137,7 +139,7 @@ router.get('/search', async (req, res) => {
 });
 
 // Get invoice statistics for dashboard
-router.get('/stats', async (req, res) => {
+router.get('/stats', auth, async (req, res) => {
   try {
     const days = 7; // Fixed to 7 days as per dashboard requirements
     const daysAgo = new Date();
@@ -145,21 +147,24 @@ router.get('/stats', async (req, res) => {
 
     // Recent transactions (last 7 days)
     const recentTransactions = await Invoice.countDocuments({
+      ownerEmail: req.user.email,
       createdAt: { $gte: daysAgo }
     });
 
     // Total invoices count
-    const totalInvoicesCount = await Invoice.countDocuments();
+  const totalInvoicesCount = await Invoice.countDocuments({ ownerEmail: req.user.email });
     
     // Processed invoices (Paid + Cancelled + Returned)
     const processedInvoices = await Invoice.countDocuments({
+      ownerEmail: req.user.email,
       status: { $in: ['Paid', 'Cancelled', 'Returned'] }
     });
 
     // Paid amount calculation
-    const paidAmountData = await Invoice.aggregate([
+  const paidAmountData = await Invoice.aggregate([
       {
         $match: {
+      ownerEmail: req.user.email,
           status: 'Paid',
           createdAt: { $gte: daysAgo }
         }
@@ -174,9 +179,10 @@ router.get('/stats', async (req, res) => {
     ]);
 
     // Unpaid amount calculation
-    const unpaidAmountData = await Invoice.aggregate([
+  const unpaidAmountData = await Invoice.aggregate([
       {
         $match: {
+      ownerEmail: req.user.email,
           status: 'Unpaid'
         }
       },
@@ -192,6 +198,7 @@ router.get('/stats', async (req, res) => {
     // Pending payments (overdue invoices)
     const today = new Date();
     const pendingPayments = await Invoice.countDocuments({
+      ownerEmail: req.user.email,
       status: 'Unpaid',
       dueDate: { $lt: today }
     });
@@ -232,9 +239,9 @@ router.get('/stats', async (req, res) => {
 });
 
 // Get single invoice by ID
-router.get('/:invoiceId', async (req, res) => {
+router.get('/:invoiceId', auth, async (req, res) => {
   try {
-    const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId });
+  const invoice = await Invoice.findOne({ invoiceId: req.params.invoiceId, ownerEmail: req.user.email });
     
     if (!invoice) {
       return res.status(404).json({
@@ -259,7 +266,7 @@ router.get('/:invoiceId', async (req, res) => {
 });
 
 // Create invoice from order (automatically called when order is placed)
-router.post('/create-from-order', async (req, res) => {
+router.post('/create-from-order', auth, async (req, res) => {
   try {
     const { orderId } = req.body;
 
@@ -271,7 +278,7 @@ router.post('/create-from-order', async (req, res) => {
     }
 
     // Check if invoice already exists for this order
-    const existingInvoice = await Invoice.findOne({ orderId: orderId });
+  const existingInvoice = await Invoice.findOne({ orderId: orderId, ownerEmail: req.user.email });
     if (existingInvoice) {
       return res.status(400).json({
         success: false,
@@ -281,7 +288,7 @@ router.post('/create-from-order', async (req, res) => {
     }
 
     // Get order details
-    const order = await Order.findOne({ orderId: orderId });
+  const order = await Order.findOne({ orderId: orderId, ownerEmail: req.user.email });
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -299,7 +306,9 @@ router.post('/create-from-order', async (req, res) => {
       pricePerUnit: order.pricePerUnit,
       totalAmount: order.totalAmount,
       orderDate: order.createdAt,
-      status: 'Unpaid'
+      status: 'Unpaid',
+      ownerEmail: req.user.email,
+      userId: req.user.id
     };
 
     const invoice = new Invoice(invoiceData);
@@ -322,12 +331,12 @@ router.post('/create-from-order', async (req, res) => {
 });
 
 // Mark invoice as paid
-router.patch('/:invoiceId/pay', async (req, res) => {
+router.patch('/:invoiceId/pay', auth, async (req, res) => {
   try {
     const { invoiceId } = req.params;
     const { notes } = req.body;
 
-    const invoice = await Invoice.findOne({ invoiceId: invoiceId });
+  const invoice = await Invoice.findOne({ invoiceId: invoiceId, ownerEmail: req.user.email });
     
     if (!invoice) {
       return res.status(404).json({
@@ -376,12 +385,12 @@ router.patch('/:invoiceId/pay', async (req, res) => {
 });
 
 // Return/Cancel invoice
-router.patch('/:invoiceId/return', async (req, res) => {
+router.patch('/:invoiceId/return', auth, async (req, res) => {
   try {
     const { invoiceId } = req.params;
     const { action, notes } = req.body; // action: 'return' or 'cancel'
 
-    const invoice = await Invoice.findOne({ invoiceId: invoiceId });
+  const invoice = await Invoice.findOne({ invoiceId: invoiceId, ownerEmail: req.user.email });
     
     if (!invoice) {
       return res.status(404).json({
@@ -418,13 +427,13 @@ router.patch('/:invoiceId/return', async (req, res) => {
     await invoice.save();
 
     // Also update the corresponding order status
-    const order = await Order.findOne({ orderId: invoice.orderId });
+  const order = await Order.findOne({ orderId: invoice.orderId, ownerEmail: req.user.email });
     if (order) {
       order.orderStatus = 'cancelled';
       await order.save();
 
       // Restore product quantity
-      const product = await Product.findOne({ productId: invoice.productId });
+  const product = await Product.findOne({ productId: invoice.productId, ownerEmail: req.user.email });
       if (product) {
         product.quantity += invoice.quantityOrdered;
         await product.save();
@@ -448,11 +457,12 @@ router.patch('/:invoiceId/return', async (req, res) => {
 });
 
 // Get overdue invoices
-router.get('/reports/overdue', async (req, res) => {
+router.get('/reports/overdue', auth, async (req, res) => {
   try {
     const today = new Date();
     
     const overdueInvoices = await Invoice.find({
+      ownerEmail: req.user.email,
       status: 'Unpaid',
       dueDate: { $lt: today }
     }).sort({ dueDate: 1 });
@@ -477,12 +487,12 @@ router.get('/reports/overdue', async (req, res) => {
 });
 
 // Get detailed invoice view (for invoice display/printing)
-router.get('/:invoiceId/view', async (req, res) => {
+router.get('/:invoiceId/view', auth, async (req, res) => {
   try {
     const { invoiceId } = req.params;
 
     // Find the invoice
-    const invoice = await Invoice.findOne({ invoiceId: invoiceId });
+  const invoice = await Invoice.findOne({ invoiceId: invoiceId, ownerEmail: req.user.email });
     
     if (!invoice) {
       return res.status(404).json({
@@ -492,10 +502,10 @@ router.get('/:invoiceId/view', async (req, res) => {
     }
 
     // Get product details
-    const product = await Product.findOne({ productId: invoice.productId });
+  const product = await Product.findOne({ productId: invoice.productId, ownerEmail: req.user.email });
     
     // Get order details for additional information
-    const order = await Order.findOne({ orderId: invoice.orderId });
+  const order = await Order.findOne({ orderId: invoice.orderId, ownerEmail: req.user.email });
 
     // Format the invoice data for display
     const invoiceView = {

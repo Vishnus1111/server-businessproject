@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 
 // Simplified Sales & Purchase tracking schema
 const simpleSalesPurchaseSchema = new mongoose.Schema({
+  // Ownership fields for per-account isolation
+  ownerEmail: { type: String, index: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
   // Simple date tracking
   date: {
     type: Date,
@@ -65,7 +68,7 @@ simpleSalesPurchaseSchema.index({ date: 1, type: 1 });
 simpleSalesPurchaseSchema.index({ year: 1, month: 1, type: 1 });
 
 // Static method to add purchase
-simpleSalesPurchaseSchema.statics.addPurchase = async function(productData) {
+simpleSalesPurchaseSchema.statics.addPurchase = async function(productData, owner) {
   try {
     // Create a fresh date object for current date - ensure we're using the actual current date
     const currentDate = new Date();
@@ -90,7 +93,9 @@ simpleSalesPurchaseSchema.statics.addPurchase = async function(productData) {
       productId: productData._id,
       productName: productData.name,
       quantity: productData.quantity,
-      unitPrice: productData.costPrice
+      unitPrice: productData.costPrice,
+      ownerEmail: owner?.email,
+      userId: owner?.id
     });
     
     await purchaseRecord.save();
@@ -105,7 +110,7 @@ simpleSalesPurchaseSchema.statics.addPurchase = async function(productData) {
 };
 
 // Static method to add sale
-simpleSalesPurchaseSchema.statics.addSale = async function(orderData) {
+simpleSalesPurchaseSchema.statics.addSale = async function(orderData, owner) {
   try {
     // Create a fresh date object for current date
     const currentDate = new Date();
@@ -138,7 +143,7 @@ simpleSalesPurchaseSchema.statics.addSale = async function(orderData) {
         quantity: item.quantity,
         unitPrice: item.price,
         orderId: orderData._id,
-        userId: orderData.userId,
+        userId: owner?.id || orderData.userId,
         profit: profit // Store the actual profit
       });
       
@@ -157,7 +162,7 @@ simpleSalesPurchaseSchema.statics.addSale = async function(orderData) {
 };
 
 // Static method to get weekly data
-simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
+simpleSalesPurchaseSchema.statics.getWeeklyData = async function(owner) {
   try {
     // Use a rolling 7-day window ending today to avoid empty charts on Sundays
     const today = new Date();
@@ -171,9 +176,14 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
     console.log(`📅 Getting transactions for last 7 days: ${startOfWindow.toISOString()} to ${endOfWindow.toISOString()}`);
 
     // Get all transactions for this window
-    const windowTransactions = await this.find({
+    const findQuery = {
       date: { $gte: startOfWindow, $lte: endOfWindow }
-    }).sort({ date: 1 });
+    };
+    if (owner?.email) {
+      findQuery.ownerEmail = owner.email;
+    }
+
+    const windowTransactions = await this.find(findQuery).sort({ date: 1 });
 
     console.log(`📊 Found ${windowTransactions.length} transactions in last 7 days`);
 
@@ -243,7 +253,7 @@ simpleSalesPurchaseSchema.statics.getWeeklyData = async function() {
 };
 
 // Static method to get monthly data
-simpleSalesPurchaseSchema.statics.getMonthlyData = async function() {
+simpleSalesPurchaseSchema.statics.getMonthlyData = async function(owner) {
   try {
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
@@ -256,9 +266,9 @@ simpleSalesPurchaseSchema.statics.getMonthlyData = async function() {
       const endOfMonth = new Date(currentYear, month + 1, 0, 23, 59, 59, 999);
       
       // Get all transactions for this month
-      const monthTransactions = await this.find({
-        date: { $gte: startOfMonth, $lte: endOfMonth }
-      }).sort({ date: 1 });
+  const monthQuery = { date: { $gte: startOfMonth, $lte: endOfMonth } };
+  if (owner?.email) monthQuery.ownerEmail = owner.email;
+  const monthTransactions = await this.find(monthQuery).sort({ date: 1 });
       
       // Calculate totals
       const purchases = monthTransactions.filter(t => t.type === 'purchase');
@@ -315,7 +325,7 @@ simpleSalesPurchaseSchema.statics.getMonthlyData = async function() {
 };
 
 // Static method to get yearly data
-simpleSalesPurchaseSchema.statics.getYearlyData = async function() {
+simpleSalesPurchaseSchema.statics.getYearlyData = async function(owner) {
   try {
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
@@ -324,9 +334,9 @@ simpleSalesPurchaseSchema.statics.getYearlyData = async function() {
     const startOfYear = new Date(currentYear, 0, 1);
     const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59, 999);
     
-    const yearTransactions = await this.find({
-      date: { $gte: startOfYear, $lte: endOfYear }
-    }).sort({ date: 1 });
+  const yearQuery = { date: { $gte: startOfYear, $lte: endOfYear } };
+  if (owner?.email) yearQuery.ownerEmail = owner.email;
+  const yearTransactions = await this.find(yearQuery).sort({ date: 1 });
     
     // Calculate totals
     const purchases = yearTransactions.filter(t => t.type === 'purchase');

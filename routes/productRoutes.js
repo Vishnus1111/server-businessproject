@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const Product = require("../models/Product");
 const SimpleSalesPurchase = require("../models/SimpleSalesPurchase");
+const auth = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Check if a product exists by ID (either productId or _id)
-router.get("/check/:id", async (req, res) => {
+router.get("/check/:id", auth, async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`Checking if product exists with ID: ${id}`);
@@ -23,12 +24,12 @@ router.get("/check/:id", async (req, res) => {
     
     // First try by MongoDB _id if it looks like a valid ObjectId
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
-      product = await Product.findById(id);
+  product = await Product.findOne({ _id: id, ownerEmail: req.user.email });
     }
     
     // If not found, try by productId
     if (!product) {
-      product = await Product.findOne({ productId: id });
+  product = await Product.findOne({ productId: id, ownerEmail: req.user.email });
     }
 
     // If still not found, create a test product
@@ -46,7 +47,9 @@ router.get("/check/:id", async (req, res) => {
         unit: "pcs",
         expiryDate: new Date("2026-12-31"),
         thresholdValue: 5,
-        availability: "In stock"
+        availability: "In stock",
+        ownerEmail: req.user.email,
+        userId: req.user.id
       });
       
       product = await newProduct.save();
@@ -403,7 +406,7 @@ router.get("/generate-id", (req, res) => {
 });
 
 // Add a single product via JSON (no image upload)
-router.post("/add-single-json", async (req, res) => {
+router.post("/add-single-json", auth, async (req, res) => {
   try {
     console.log("Add single product (JSON) request:", req.body);
     
@@ -441,7 +444,9 @@ router.post("/add-single-json", async (req, res) => {
       unit,
       expiryDate: parsedDate,
       thresholdValue: parseInt(thresholdValue),
-      imageUrl: null // No images for JSON endpoint
+      imageUrl: null, // No images for JSON endpoint
+      ownerEmail: req.user.email,
+      userId: req.user.id
     });
     
     await product.save();
@@ -451,12 +456,12 @@ router.post("/add-single-json", async (req, res) => {
       console.log(`🔍 Tracking Purchase (Fixed): ${product.productName}`);
       console.log(`💰 Purchase Amount: ₹${product.costPrice} × ${product.quantity} = ₹${product.costPrice * product.quantity}`);
       
-      const trackingResult = await SimpleSalesPurchase.addPurchase({
+  const trackingResult = await SimpleSalesPurchase.addPurchase({
         _id: product._id,
         name: product.productName,
         costPrice: product.costPrice,
         quantity: product.quantity
-      });
+  }, req.user);
       
       console.log(`✅ Purchase tracked successfully (Fixed):`, {
         productName: product.productName,
@@ -485,7 +490,7 @@ router.post("/add-single-json", async (req, res) => {
 });
 
 // Generate a new product ID (for frontend preview)
-router.get("/generate-id", (req, res) => {
+router.get("/generate-id", auth, (req, res) => {
   try {
     const productId = generateProductId();
     res.status(200).json({
@@ -503,7 +508,7 @@ router.get("/generate-id", (req, res) => {
 });
 
 // Get CSV format requirements and sample data
-router.get("/csv-format", (req, res) => {
+router.get("/csv-format", auth, (req, res) => {
   try {
     const columnOrder = ['productName', 'productId', 'category', 'costPrice', 'sellingPrice', 'quantity', 'unit', 'expiryDate', 'thresholdValue', 'description'];
     
@@ -554,7 +559,7 @@ router.get("/csv-format", (req, res) => {
 });
 
 // Add a single product (with optional image upload using built-in Node.js only)
-router.post("/add-single", async (req, res) => {
+router.post("/add-single", auth, async (req, res) => {
   try {
     console.log("Processing multipart form data...");
     
@@ -626,6 +631,7 @@ router.post("/add-single", async (req, res) => {
 
     // Check for duplicate product name
     const existingProduct = await Product.findOne({ 
+      ownerEmail: req.user.email,
       productName: { $regex: new RegExp(`^${productName.trim()}$`, 'i') } 
     });
     if (existingProduct) {
@@ -693,7 +699,9 @@ router.post("/add-single", async (req, res) => {
       unit,
       expiryDate: parsedDate,
       thresholdValue: parsedThresholdValue,
-      imageUrl
+      imageUrl,
+      ownerEmail: req.user.email,
+      userId: req.user.id
     });
     
     await product.save();
@@ -703,12 +711,12 @@ router.post("/add-single", async (req, res) => {
       console.log(`🔍 Tracking Purchase (Form-data): ${product.productName}`);
       console.log(`💰 Purchase Amount: ₹${product.costPrice} × ${product.quantity} = ₹${product.costPrice * product.quantity}`);
       
-      const trackingResult = await SimpleSalesPurchase.addPurchase({
+  const trackingResult = await SimpleSalesPurchase.addPurchase({
         _id: product._id,
         name: product.productName,
         costPrice: product.costPrice,
         quantity: product.quantity
-      });
+  }, req.user);
       
       console.log(`✅ Purchase tracked successfully (Form-data):`, {
         productName: product.productName,
@@ -737,7 +745,7 @@ router.post("/add-single", async (req, res) => {
 });
 
 // Validate CSV file before upload
-router.post("/validate-csv", async (req, res) => {
+router.post("/validate-csv", auth, async (req, res) => {
   try {
     console.log("🚀 POST /validate-csv route hit!");
     console.log("Request headers:", req.headers);
@@ -897,6 +905,7 @@ router.post("/validate-csv", async (req, res) => {
       // Check for duplicate product names in database
       try {
         const existingProduct = await Product.findOne({ 
+          ownerEmail: req.user.email,
           productName: { $regex: new RegExp(`^${product.productName.trim()}$`, 'i') } 
         });
         if (existingProduct) {
@@ -934,7 +943,7 @@ router.post("/validate-csv", async (req, res) => {
 });
 
 // Add multiple products via CSV upload (no images, built-in modules only)
-router.post("/add-multiple", async (req, res) => {
+router.post("/add-multiple", auth, async (req, res) => {
   try {
     console.log("Processing CSV upload...");
     
@@ -1088,7 +1097,9 @@ router.post("/add-multiple", async (req, res) => {
             unit: productData.unit.trim(),
             expiryDate: parsedDate,
             thresholdValue: parseInt(productData.thresholdValue),
-            imageUrl: null // No images for bulk upload
+            imageUrl: null, // No images for bulk upload
+            ownerEmail: req.user.email,
+            userId: req.user.id
           });
           
           // Save the product with explicit await
@@ -1104,7 +1115,7 @@ router.post("/add-multiple", async (req, res) => {
               name: savedProduct.productName,
               costPrice: savedProduct.costPrice,
               quantity: savedProduct.quantity
-            });
+            }, req.user);
             console.log(`✅ Purchase tracked successfully (CSV):`, {
               productName: savedProduct.productName,
               amount: savedProduct.costPrice * savedProduct.quantity,
@@ -1254,7 +1265,7 @@ router.post("/add-multiple", async (req, res) => {
 });
 
 // Search products across all fields
-router.get("/search", async (req, res) => {
+router.get("/search", auth, async (req, res) => {
   try {
     const { query, page = 1, limit = 20 } = req.query;
     
@@ -1272,6 +1283,7 @@ router.get("/search", async (req, res) => {
 
     // Search across multiple fields
     const searchConditions = {
+      ownerEmail: req.user.email,
       $or: [
         { productId: searchRegex },
         { productName: searchRegex },
@@ -1296,10 +1308,10 @@ router.get("/search", async (req, res) => {
     };
 
     // Get total count for pagination
-    const totalProducts = await Product.countDocuments(searchConditions);
+  const totalProducts = await Product.countDocuments(searchConditions);
     
     // Get products with pagination
-    const products = await Product.find(searchConditions)
+  const products = await Product.find(searchConditions)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNumber);
@@ -1333,7 +1345,7 @@ router.get("/search", async (req, res) => {
 });
 
 // Get all products
-router.get("/all", async (req, res) => {
+router.get("/all", auth, async (req, res) => {
   try {
     // Log request information
     console.log("GET /api/products/all request received");
@@ -1345,7 +1357,7 @@ router.get("/all", async (req, res) => {
     res.set('Expires', '0');
     
     // Fetch all products sorted by newest first
-    const products = await Product.find().sort({ createdAt: -1 });
+  const products = await Product.find({ ownerEmail: req.user.email }).sort({ createdAt: -1 });
     
     console.log(`Returning ${products.length} products`);
     
@@ -1366,14 +1378,14 @@ router.get("/all", async (req, res) => {
 });
 
 // Test route for debugging
-router.get("/test", (req, res) => {
+router.get("/test", auth, (req, res) => {
   res.json({ message: "Product routes are working!" });
 });
 
 // Get single product by ID (keep this last as it's a wildcard route)
-router.get("/:productId", async (req, res) => {
+router.get("/:productId", auth, async (req, res) => {
   try {
-    const product = await Product.findOne({ productId: req.params.productId });
+  const product = await Product.findOne({ productId: req.params.productId, ownerEmail: req.user.email });
     
     if (!product) {
       return res.status(404).json({

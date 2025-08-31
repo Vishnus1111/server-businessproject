@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const auth = require('../middleware/auth');
 const Product = require('../models/Product');
 const Order = require('../models/Order');
 const SalesPurchase = require('../models/SalesPurchase');
@@ -15,12 +16,12 @@ router.use((req, res, next) => {
 });
 
 // Debug endpoint to test SimpleSalesPurchase directly
-router.get('/debug-tracking', async (req, res) => {
+router.get('/debug-tracking', auth, async (req, res) => {
   try {
     console.log('🐛 Debug: Testing SimpleSalesPurchase directly...');
     
     // Test 1: Count existing records
-    const count = await SimpleSalesPurchase.countDocuments();
+  const count = await SimpleSalesPurchase.countDocuments({ ownerEmail: req.user.email });
     console.log(`📊 Current SimpleSalesPurchase count: ${count}`);
     
     // DISABLED: Don't automatically create test records
@@ -32,7 +33,7 @@ router.get('/debug-tracking', async (req, res) => {
     const staticResult = { _id: 'disabled-to-prevent-data-pollution' };
     
     // Test 4: Get all records
-    const allRecords = await SimpleSalesPurchase.find();
+  const allRecords = await SimpleSalesPurchase.find({ ownerEmail: req.user.email });
     console.log(`📄 All records:`, allRecords.length);
     
     res.json({
@@ -63,7 +64,7 @@ router.get('/debug-tracking', async (req, res) => {
 });
 
 // Debug endpoint to add test data for specific days
-router.get('/add-test-data', async (req, res) => {
+router.get('/add-test-data', auth, async (req, res) => {
   try {
     const { day, type } = req.query;
     const purchaseType = type || 'purchase';
@@ -109,7 +110,9 @@ router.get('/add-test-data', async (req, res) => {
       productId: `TEST-${Date.now()}`,
       productName: product,
       quantity: Math.round(Math.random() * 10) + 1,
-      unitPrice: amount / (Math.round(Math.random() * 10) + 1)
+      unitPrice: amount / (Math.round(Math.random() * 10) + 1),
+      ownerEmail: req.user.email,
+      userId: req.user.id
     });
     
     await testData.save();
@@ -140,7 +143,7 @@ router.get('/add-test-data', async (req, res) => {
 });
 
 // Debug endpoint to check records for a specific day
-router.get('/debug-day-records', async (req, res) => {
+router.get('/debug-day-records', auth, async (req, res) => {
   try {
     // Default to today if no date is provided
     const { date } = req.query;
@@ -162,11 +165,12 @@ router.get('/debug-day-records', async (req, res) => {
       date: {
         $gte: startOfDay,
         $lte: endOfDay
-      }
+      },
+      ownerEmail: req.user.email
     }).sort({ date: 1 });
     
     // Get a list of all SimpleSalesPurchase records (limited to most recent 100)
-    const allRecords = await SimpleSalesPurchase.find()
+  const allRecords = await SimpleSalesPurchase.find({ ownerEmail: req.user.email })
       .sort({ date: -1 })
       .limit(100);
     
@@ -230,14 +234,14 @@ router.get('/debug-day-records', async (req, res) => {
 });
 
 // Fixed Analytics Endpoint (Using SimpleSalesPurchase)
-router.get('/chart-data-fixed', async (req, res) => {
+router.get('/chart-data-fixed', auth, async (req, res) => {
   try {
     console.log('🔍 Getting fixed analytics data...');
     
     const { period = 'weekly' } = req.query;
     
     // Debug: Check if any SimpleSalesPurchase records exist
-    const totalRecords = await SimpleSalesPurchase.countDocuments();
+  const totalRecords = await SimpleSalesPurchase.countDocuments({ ownerEmail: req.user.email });
     console.log(`📊 Total SimpleSalesPurchase records in DB: ${totalRecords}`);
     
     if (totalRecords > 0) {
@@ -246,7 +250,7 @@ router.get('/chart-data-fixed', async (req, res) => {
     }
     
     if (period === 'weekly') {
-      const weeklyData = await SimpleSalesPurchase.getWeeklyData();
+  const weeklyData = await SimpleSalesPurchase.getWeeklyData(req.user);
       
       console.log(`📊 Weekly Summary:`, weeklyData.summary);
       console.log(`📅 Week Range: ${weeklyData.weekRange.start.toDateString()} to ${weeklyData.weekRange.end.toDateString()}`);
@@ -270,7 +274,7 @@ router.get('/chart-data-fixed', async (req, res) => {
         message: 'Fixed analytics data retrieved successfully'
       });
     } else if (period === 'monthly') {
-      const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+  const monthlyData = await SimpleSalesPurchase.getMonthlyData(req.user);
       
       console.log(`📊 Monthly Summary:`, monthlyData.summary);
       console.log(`📅 Year: ${monthlyData.year}`);
@@ -291,7 +295,7 @@ router.get('/chart-data-fixed', async (req, res) => {
         message: 'Monthly analytics data retrieved successfully'
       });
     } else if (period === 'yearly') {
-      const yearlyData = await SimpleSalesPurchase.getYearlyData();
+  const yearlyData = await SimpleSalesPurchase.getYearlyData(req.user);
       
       console.log(`📊 Yearly Summary:`, yearlyData.summary);
       console.log(`📅 Year: ${yearlyData.year}`);
@@ -332,11 +336,11 @@ router.get('/chart-data-fixed', async (req, res) => {
 });
 
 // Monthly data endpoint
-router.get('/monthly-data', async (req, res) => {
+router.get('/monthly-data', auth, async (req, res) => {
   try {
     console.log('🔍 Getting monthly analytics data...');
     
-    const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+  const monthlyData = await SimpleSalesPurchase.getMonthlyData(req.user);
     
     console.log(`📊 Monthly Summary:`, monthlyData.summary);
     console.log(`📈 Monthly Breakdown:`, monthlyData.monthlyBreakdown.length);
@@ -362,11 +366,11 @@ router.get('/monthly-data', async (req, res) => {
 });
 
 // Yearly data endpoint
-router.get('/yearly-data', async (req, res) => {
+router.get('/yearly-data', auth, async (req, res) => {
   try {
     console.log('🔍 Getting yearly analytics data...');
     
-    const yearlyData = await SimpleSalesPurchase.getYearlyData();
+  const yearlyData = await SimpleSalesPurchase.getYearlyData(req.user);
     
     console.log(`📊 Yearly Summary:`, yearlyData.summary);
     console.log(`📈 Yearly Data:`, yearlyData.yearlyData);
@@ -393,15 +397,15 @@ router.get('/yearly-data', async (req, res) => {
 
 // Simple Real-time Sales & Purchase Chart Data (Fixed)
 // Dedicated endpoint for monthly data
-router.get('/monthly-data', async (req, res) => {
+router.get('/monthly-data', auth, async (req, res) => {
   try {
     console.log('🔍 Getting monthly analytics data...');
     
     // Check if we have any records at all (for debugging)
-    const totalRecords = await SimpleSalesPurchase.countDocuments();
+  const totalRecords = await SimpleSalesPurchase.countDocuments({ ownerEmail: req.user.email });
     console.log(`📊 Total SimpleSalesPurchase records in DB: ${totalRecords}`);
     
-    const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+  const monthlyData = await SimpleSalesPurchase.getMonthlyData(req.user);
     
     res.json({
       success: true,
@@ -421,15 +425,15 @@ router.get('/monthly-data', async (req, res) => {
 });
 
 // Dedicated endpoint for yearly data
-router.get('/yearly-data', async (req, res) => {
+router.get('/yearly-data', auth, async (req, res) => {
   try {
     console.log('🔍 Getting yearly analytics data...');
     
     // Check if we have any records at all (for debugging)
-    const totalRecords = await SimpleSalesPurchase.countDocuments();
+  const totalRecords = await SimpleSalesPurchase.countDocuments({ ownerEmail: req.user.email });
     console.log(`📊 Total SimpleSalesPurchase records in DB: ${totalRecords}`);
     
-    const yearlyData = await SimpleSalesPurchase.getYearlyData();
+  const yearlyData = await SimpleSalesPurchase.getYearlyData(req.user);
     
     res.json({
       success: true,
@@ -448,7 +452,7 @@ router.get('/yearly-data', async (req, res) => {
   }
 });
 
-router.get('/chart-data-simple', async (req, res) => {
+router.get('/chart-data-simple', auth, async (req, res) => {
   try {
     console.log('🔍 Starting simple analytics...');
     
@@ -470,7 +474,7 @@ router.get('/chart-data-simple', async (req, res) => {
     console.log(`📅 Week range: ${startOfWeek.toDateString()} to ${endOfWeek.toDateString()}`);
     
     // Count SalesPurchase documents
-    const count = await SalesPurchase.countDocuments();
+  const count = await SalesPurchase.countDocuments();
     console.log(`📊 Total SalesPurchase documents: ${count}`);
     
     // Get some sample data if available
@@ -509,21 +513,21 @@ router.get('/chart-data-simple', async (req, res) => {
 
 // Real-time Sales & Purchase Chart Data (Your Implementation)
 // Real-time Chart Data (FIXED - Using SimpleSalesPurchase)
-router.get('/chart-data-realtime', async (req, res) => {
+router.get('/chart-data-realtime', auth, async (req, res) => {
   try {
     const { period = 'weekly' } = req.query;
     
     console.log(`🔍 Real-time Analytics Request - Period: ${period}`);
     
     // Check if we have any purchase records at all (for debugging)
-    const allPurchaseCount = await SimpleSalesPurchase.countDocuments({ type: 'purchase' });
-    const allSalesCount = await SimpleSalesPurchase.countDocuments({ type: 'sale' });
+  const allPurchaseCount = await SimpleSalesPurchase.countDocuments({ type: 'purchase', ownerEmail: req.user.email });
+  const allSalesCount = await SimpleSalesPurchase.countDocuments({ type: 'sale', ownerEmail: req.user.email });
     
     console.log(`📊 Total records in database: ${allPurchaseCount} purchases, ${allSalesCount} sales`);
     
     if (allPurchaseCount > 0) {
       // Get a sample purchase record to check dates
-      const samplePurchase = await SimpleSalesPurchase.findOne({ type: 'purchase' }).sort({ createdAt: -1 });
+  const samplePurchase = await SimpleSalesPurchase.findOne({ type: 'purchase', ownerEmail: req.user.email }).sort({ createdAt: -1 });
       console.log(`📄 Sample purchase record: ${samplePurchase.productName} - ₹${samplePurchase.amount} - Date: ${samplePurchase.date.toISOString()}`);
     }
     
@@ -554,7 +558,8 @@ router.get('/chart-data-realtime', async (req, res) => {
         date: {
           $gte: weekStartDate,
           $lte: weekEndDate
-        }
+        },
+        ownerEmail: req.user.email
       }).sort({ date: 1 });
       
       console.log(`📄 Found ${weekRecords.length} records for current week`);
@@ -671,7 +676,7 @@ router.get('/chart-data-realtime', async (req, res) => {
     } 
     else if (period === 'monthly') {
       // Get monthly data for the current year
-      const monthlyData = await SimpleSalesPurchase.getMonthlyData();
+  const monthlyData = await SimpleSalesPurchase.getMonthlyData(req.user);
       
       console.log(`✅ Monthly data retrieved for year ${monthlyData.year}`);
       console.log(`📊 Monthly Summary:`, monthlyData.summary);
@@ -695,7 +700,7 @@ router.get('/chart-data-realtime', async (req, res) => {
     }
     else if (period === 'yearly') {
       // Get yearly data
-      const yearlyData = await SimpleSalesPurchase.getYearlyData();
+  const yearlyData = await SimpleSalesPurchase.getYearlyData(req.user);
       
       console.log(`✅ Yearly data retrieved for year ${yearlyData.year}`);
       console.log(`📊 Yearly Summary:`, yearlyData.summary);
@@ -736,7 +741,7 @@ router.get('/chart-data-realtime', async (req, res) => {
 });
 
 // Overview endpoint for statistics cards
-router.get('/overview', async (req, res) => {
+router.get('/overview', auth, async (req, res) => {
   try {
     console.log('🔍 Getting statistics overview data...');
     
@@ -762,12 +767,14 @@ router.get('/overview', async (req, res) => {
     // Get total revenue (sales)
     const currentMonthSales = await SimpleSalesPurchase.find({
       type: 'sale',
-      date: { $gte: currentMonthStart, $lte: currentMonthEnd }
+      date: { $gte: currentMonthStart, $lte: currentMonthEnd },
+      ownerEmail: req.user.email
     });
     
     const lastMonthSales = await SimpleSalesPurchase.find({
       type: 'sale',
-      date: { $gte: lastMonthStart, $lte: lastMonthEnd }
+      date: { $gte: lastMonthStart, $lte: lastMonthEnd },
+      ownerEmail: req.user.email
     });
     
     const currentMonthRevenue = currentMonthSales.reduce((sum, sale) => sum + sale.amount, 0);
@@ -788,8 +795,9 @@ router.get('/overview', async (req, res) => {
       : 0;
     
     // Get products in stock count (from Product model)
-    const productsInStock = await Product.aggregate([
+  const productsInStock = await Product.aggregate([
       {
+    $match: { ownerEmail: req.user.email },
         $group: {
           _id: null,
           totalProducts: { $sum: "$quantity" }
@@ -1419,14 +1427,15 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
-// Dashboard Summary with Period Comparison
-router.get('/dashboard-summary', async (req, res) => {
+// Dashboard Summary with Period Comparison (scoped per user)
+router.get('/dashboard-summary', auth, async (req, res) => {
   try {
     const period = req.query.period || 'month'; // day, week, month
     const { current, previous } = getDateRanges(period);
     
     // Get products with valid pricing (active only)
     const validProducts = await Product.find({
+      ownerEmail: req.user.email,
       status: 'active',
       costPrice: { $exists: true, $ne: null },
       sellingPrice: { $exists: true, $ne: null }
@@ -1439,6 +1448,7 @@ router.get('/dashboard-summary', async (req, res) => {
     const currentRevenue = await Order.aggregate([
       { 
         $match: { 
+      ownerEmail: req.user.email,
           orderStatus: { $ne: 'cancelled' },
           createdAt: { $gte: current.start.toDate(), $lte: current.end.toDate() }
         } 
@@ -1449,6 +1459,7 @@ router.get('/dashboard-summary', async (req, res) => {
     const currentProductsSold = await Order.aggregate([
       { 
         $match: { 
+      ownerEmail: req.user.email,
           orderStatus: { $ne: 'cancelled' },
           createdAt: { $gte: current.start.toDate(), $lte: current.end.toDate() }
         } 
@@ -1460,6 +1471,7 @@ router.get('/dashboard-summary', async (req, res) => {
     const previousRevenue = await Order.aggregate([
       { 
         $match: { 
+      ownerEmail: req.user.email,
           orderStatus: { $ne: 'cancelled' },
           createdAt: { $gte: previous.start.toDate(), $lte: previous.end.toDate() }
         } 
@@ -1470,6 +1482,7 @@ router.get('/dashboard-summary', async (req, res) => {
     const previousProductsSold = await Order.aggregate([
       { 
         $match: { 
+      ownerEmail: req.user.email,
           orderStatus: { $ne: 'cancelled' },
           createdAt: { $gte: previous.start.toDate(), $lte: previous.end.toDate() }
         } 
@@ -1491,6 +1504,7 @@ router.get('/dashboard-summary', async (req, res) => {
     
     // For stock comparison, compare with previous period's stock levels
     const previousStockCount = await Product.countDocuments({
+      ownerEmail: req.user.email,
       status: 'active',
       costPrice: { $exists: true, $ne: null },
       sellingPrice: { $exists: true, $ne: null },

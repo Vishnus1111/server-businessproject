@@ -1,6 +1,9 @@
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
+  // Ownership fields for per-account isolation
+  ownerEmail: { type: String, index: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
   orderId: {
     type: String,
     unique: true,
