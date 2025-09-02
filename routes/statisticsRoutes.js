@@ -904,14 +904,14 @@ const getDateRanges = (period = 'week') => {
       end: moment().subtract(1, 'week').endOf('week')     // Previous Saturday
     };
   } else if (period === 'month') {
-    // January to December of current year
+    // Current month and previous month
     current = {
-      start: moment().startOf('year'), // January 1st
-      end: moment().endOf('year')      // December 31st
+      start: moment().startOf('month'),
+      end: moment().endOf('month')
     };
     previous = {
-      start: moment().subtract(1, 'year').startOf('year'), // Previous year Jan 1st
-      end: moment().subtract(1, 'year').endOf('year')      // Previous year Dec 31st
+      start: moment().subtract(1, 'month').startOf('month'),
+      end: moment().subtract(1, 'month').endOf('month')
     };
   } else if (period === 'year') {
     // Current year only
@@ -1502,16 +1502,24 @@ router.get('/dashboard-summary', auth, async (req, res) => {
     const revenueChange = calculatePercentageChange(currentRevenueValue, previousRevenueValue);
     const productsSoldChange = calculatePercentageChange(currentProductsSoldValue, previousProductsSoldValue);
     
-    // For stock comparison, compare with previous period's stock levels
+    // For stock comparison, estimate counts by creation cutoff per period (no historical snapshots)
+    const currentStockByCutoff = await Product.countDocuments({
+      ownerEmail: req.user.email,
+      status: 'active',
+      costPrice: { $exists: true, $ne: null },
+      sellingPrice: { $exists: true, $ne: null },
+      createdAt: { $lte: current.end.toDate() }
+    });
+
     const previousStockCount = await Product.countDocuments({
       ownerEmail: req.user.email,
       status: 'active',
       costPrice: { $exists: true, $ne: null },
       sellingPrice: { $exists: true, $ne: null },
-      updatedAt: { $gte: previous.start.toDate(), $lte: previous.end.toDate() }
+      createdAt: { $lte: previous.end.toDate() }
     });
-    
-    const stockChange = calculatePercentageChange(totalProductsInStock, previousStockCount || totalProductsInStock);
+
+    const stockChange = calculatePercentageChange(currentStockByCutoff, previousStockCount);
     
     res.json({
       period: period,
@@ -1538,7 +1546,7 @@ router.get('/dashboard-summary', auth, async (req, res) => {
         },
         productsInStock: {
           current: totalProductsInStock,
-          previous: previousStockCount || totalProductsInStock,
+          previous: previousStockCount,
           change: parseFloat(stockChange),
           trend: stockChange > 0 ? 'up' : stockChange < 0 ? 'down' : 'stable'
         },
