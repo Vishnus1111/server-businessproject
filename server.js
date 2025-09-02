@@ -28,10 +28,35 @@ const app = express();
 // Middleware for handling different types of requests
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(cors({ 
-  origin: [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'], 
-  credentials: true 
-}));
+// CORS configuration: allow Vercel app, local dev, and (optionally) Vercel previews
+const stripTrailingSlash = (url) => (typeof url === 'string' ? url.replace(/\/$/, '') : url);
+const ALLOWED_ORIGINS = [
+  stripTrailingSlash(process.env.FRONTEND_URL),
+  'http://localhost:3000',
+  'http://localhost:3001'
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser requests (like curl/postman without Origin)
+    if (!origin) return callback(null, true);
+
+    const cleanOrigin = stripTrailingSlash(origin);
+    const isWhitelisted =
+      ALLOWED_ORIGINS.includes(cleanOrigin) ||
+      /\.vercel\.app$/.test(cleanOrigin); // allow Vercel preview deployments
+
+    if (isWhitelisted) return callback(null, true);
+    return callback(new Error(`Not allowed by CORS: ${origin}`), false);
+  },
+  credentials: true,
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
+// Ensure preflight requests are handled for all routes
+app.options('*', cors(corsOptions));
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
