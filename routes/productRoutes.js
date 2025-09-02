@@ -984,11 +984,7 @@ router.post("/add-multiple", auth, async (req, res) => {
         duplicates: []
       };
       
-  // Establish a base timestamp so we can assign strictly increasing createdAt values per row
-  const baseTimestamp = Date.now();
-  let rowIndex = 0;
-
-  for (const productData of products) {
+      for (const productData of products) {
         const rowNumber = productData.rowNumber;
         
         try {
@@ -1105,13 +1101,6 @@ router.post("/add-multiple", auth, async (req, res) => {
             ownerEmail: req.user.email,
             userId: req.user.id
           });
-
-          // Assign deterministic createdAt/updatedAt so last-added appears on top when sorted desc
-          // Use a 1ms increment per row to ensure strict ordering even within the same millisecond window
-          const created = new Date(baseTimestamp + rowIndex);
-          product.createdAt = created;
-          product.updatedAt = created;
-          rowIndex += 1;
           
           // Save the product with explicit await
           const savedProduct = await product.save();
@@ -1323,7 +1312,7 @@ router.get("/search", auth, async (req, res) => {
     
     // Get products with pagination
   const products = await Product.find(searchConditions)
-      .sort({ createdAt: -1, _id: -1 })
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limitNumber);
 
@@ -1367,8 +1356,8 @@ router.get("/all", auth, async (req, res) => {
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
     
-    // Fetch all products sorted by newest first with deterministic tie-breaker for batch inserts
-  const products = await Product.find({ ownerEmail: req.user.email }).sort({ createdAt: -1, _id: -1 });
+    // Fetch all products sorted by newest first
+  const products = await Product.find({ ownerEmail: req.user.email }).sort({ createdAt: -1 });
     
     console.log(`Returning ${products.length} products`);
     
