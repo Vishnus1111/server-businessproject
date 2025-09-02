@@ -56,7 +56,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 // Ensure preflight requests are handled for all routes (Express 5 compatible path)
-app.options('/(.*)', cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
