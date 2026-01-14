@@ -100,9 +100,13 @@ app.use((req, res, next) => {
 });
 
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, {
+    serverSelectionTimeoutMS: 30000, // Increase timeout to 30 seconds
+    socketTimeoutMS: 45000,
+  })
   .then(() => {
-    console.log("MongoDB connected");
+    console.log("MongoDB connected successfully");
+    console.log("Database:", mongoose.connection.name);
     
     // Start the daily cron job after database connection
     cronJobService.startDailyCronJob();
@@ -150,7 +154,24 @@ mongoose
     // For testing purposes, you can also start a test cron job that runs every minute
     // cronJobService.startTestCronJob();
   })
-  .catch((err) => console.error(err));
+  .catch((err) => {
+    console.error("MongoDB connection error:", err);
+    console.error("Connection string format check - ensure MONGO_URI is set correctly");
+    process.exit(1); // Exit if database connection fails
+  });
+
+// Handle MongoDB connection events
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.warn('MongoDB disconnected. Attempting to reconnect...');
+});
+
+mongoose.connection.on('reconnected', () => {
+  console.log('MongoDB reconnected');
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
