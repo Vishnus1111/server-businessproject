@@ -144,7 +144,7 @@ router.post("/forgot-password", async (req, res) => {
 
     const otp = generateOTP();
     user.otp = otp;
-    user.otpExpires = Date.now() + (config.OTP_EXPIRE_MINUTES * 60 * 1000); // 5 minutes expiry
+  user.otpExpires = Date.now() + (config.OTP_EXPIRE_MINUTES * 60 * 1000); // expiry in minutes from config
     await user.save();
 
     console.log(`🔑 Generated OTP for ${email}: ${otp}`);
